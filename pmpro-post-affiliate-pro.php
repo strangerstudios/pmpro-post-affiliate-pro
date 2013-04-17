@@ -9,10 +9,10 @@ Author URI: http://www.strangerstudios.com
 		 
 Paid Memberships Pro (http://wordpress.org/extend/plugins/paid-memberships-pro/) must be installed and activated. You will need a Post Affiliate Pro account.
 */
-define('URL_TO_PAP', '');
-define('PAP_LOGIN', '');
-define('PAP_PASS', '');
-define('PAP_ACCOUNT', '');
+define('URL_TO_PAP', 'http://{account}.postaffiliatepro.com/');
+define('PAP_LOGIN', '{email}');
+define('PAP_PASS', '{pass}');
+define('PAP_ACCOUNT', 'default1');
 
 //login to API
 function pap_login()
@@ -50,11 +50,9 @@ function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaig
 		$saleTracker->register();
 	}
 	catch(Exception $e)
-	{		
+	{				
 		die($e->getMessage);
 	}	
-	
-	exit;
 }
 
 //track sales after checkout
@@ -83,7 +81,7 @@ function pap_pmpro_after_checkout($user_id)
 		//save affiliate id in order
 		$morder->affiliate_id = $affiliate_code;
 		$morder->affiliate_subid = $campaign_id . "," . $channel_id . "," . $visitor_id;
-		$morder->saveOrder();
+		$morder->saveOrder();		
 	}
 }
 add_action("pmpro_after_checkout", "pap_pmpro_after_checkout");

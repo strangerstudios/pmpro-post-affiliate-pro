@@ -1959,7 +1959,7 @@ if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
           // Make the call
           $result = curl_exec($session);
           $error = curl_error($session);
-  
+ 
           curl_close($session);
   
           if (strlen($error)) {

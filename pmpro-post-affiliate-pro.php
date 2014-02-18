@@ -38,6 +38,12 @@ function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaig
 	$sale1->setTotalCost($total);
 	$sale1->setOrderID($orderid);
 	
+	// set product id to membership id for checking specific products in campaigns
+	$order = new MemberOrder($orderid);
+	$membership_id = $order->membership_id;
+	
+	$sale1->setProductID($membership_id);
+	
 	if(!empty($affiliate_code))
 		$sale1->setAffiliateID($affiliate_code);
 	if(!empty($campaign_id))

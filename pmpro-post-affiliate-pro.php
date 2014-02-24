@@ -3,7 +3,7 @@
 Plugin Name: PMPro Post Affiliate Pro Integration
 Plugin URI: http://www.paidmembershipspro.com/wp/pmpro-post-affiliate-pro/
 Description: Process an affiliate via Post Affiliate Pro after a PMPro checkout.
-Version: .1
+Version: .3
 Author: Stranger Studios
 Author URI: http://www.strangerstudios.com
 		 
@@ -20,7 +20,17 @@ function pap_login()
 	require_once(dirname(__FILE__) . "/lib/PapApi.class.php");
 	$session = new Gpf_Api_Session(URL_TO_PAP . "scripts/server.php");
 	if(!$session->login(PAP_LOGIN, PAP_PASS)) {
-	  die("Cannot login. Message: ".$session->getMessage());
+		//if admin, show notice. else ignore
+		if(current_user_can("manage_options"))
+		{
+		?>
+			<p>ERROR: Can't authenticate with Post Affiliates Pro. Check that your PAP credentials are correct in the PMPro Post Affiliates Pro plugin and that the Post Affiliates Pro API is not experiencing an outage. Response from PAP: <?php echo $session->getMessage();?></p>
+		<?php
+		}
+		else
+		{	  
+			//shhh... don't let users know
+		}
 	}
 }
 
@@ -51,7 +61,17 @@ function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaig
 	}
 	catch(Exception $e)
 	{				
-		die($e->getMessage);
+		//die($e->getMessage);
+		if(current_user_can("manage_options"))
+		{
+		?>
+			<p>ERROR: <?php echo $e->getMessage();?></p>
+		<?php
+		}
+		else
+		{
+			//shhhh... don't let normal users know
+		}
 	}	
 }
 
@@ -150,7 +170,19 @@ function pap_pmpro_wp_head()
         $clickTracker->saveCookies();                
     } catch (Exception $e) {
     	//stop here
-    	die($e->getMessage());
+    	
+		//die($e->getMessage);
+		if(current_user_can("manage_options"))
+		{
+		?>
+			<p>ERROR: <?php echo $e->getMessage();?></p>
+		<?php
+		}
+		else
+		{
+			//shhhh... don't let normal users know
+		}
+				
     	return;   	
     }
     

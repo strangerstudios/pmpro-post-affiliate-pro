@@ -9,8 +9,8 @@
  *   Version 1.0 (the "License"); you may not use this file except in compliance
  *   with the License. You may obtain a copy of the License at
  *   http://www.qualityunit.com/licenses/gpf
- *   Generated on: 2013-03-05 04:31:36
- *   PAP version: 4.9.2.4, GPF version: 1.2.0.0
+ *   Generated on: 2013-11-20 00:43:16
+ *   PAP version: 5.0.10.1, GPF version: 1.2.3.0
  *   
  */
 
@@ -342,6 +342,7 @@ if (!class_exists('Gpf_Rpc_MultiRequest', false)) {
   class Gpf_Rpc_MultiRequest extends Gpf_Object {
       private $url = '';
       private $useNewStyleRequestsEncoding;
+      private $maxTimeout;
       /**
        *
        * @var Gpf_Rpc_Array
@@ -370,6 +371,10 @@ if (!class_exists('Gpf_Rpc_MultiRequest', false)) {
       public function useNewStyleRequestsEncoding($useNewStyle) {
           $this->useNewStyleRequestsEncoding = $useNewStyle;
       }
+      
+      public function setMaxTimeout($timeout) {
+          $this->maxTimeout = $timeout;
+      }
   
       /**
        * @return Gpf_Rpc_MultiRequest
@@ -395,6 +400,9 @@ if (!class_exists('Gpf_Rpc_MultiRequest', false)) {
           $request->setMethod('POST');
           $request->setBody(Gpf_Rpc_Server::BODY_DATA_NAME . '=' . urlencode($requestBody));
           $request->setUrl($this->url);
+          if ($this->maxTimeout != '') {
+              $request->setMaxTimeout($this->maxTimeout);
+          }
   
           $client = new Gpf_Net_Http_Client();
           $response = $client->execute($request);
@@ -669,6 +677,7 @@ if (!class_exists('Gpf_Rpc_Request', false)) {
       protected $response;
       protected $apiSessionObject = null;
       private $useNewStyleRequestsEncoding = false;
+      private $maxTimeout = null;
   
       /**
        * @var Gpf_Rpc_MultiRequest
@@ -689,6 +698,10 @@ if (!class_exists('Gpf_Rpc_Request', false)) {
           if($apiSessionObject != null) {
               $this->apiSessionObject = $apiSessionObject;
           }
+      }
+      
+      public function setMaxTimeout($timeout) {
+          $this->maxTimeout = $timeout;
       }
   
       public function useNewStyleRequestsEncoding($useNewStyle) {
@@ -732,6 +745,7 @@ if (!class_exists('Gpf_Rpc_Request', false)) {
               $this->multiRequest = new Gpf_Rpc_MultiRequest();
               $this->multiRequest->setUrl($this->apiSessionObject->getUrl());
               $this->multiRequest->useNewStyleRequestsEncoding($this->useNewStyleRequestsEncoding);
+              $this->multiRequest->setMaxTimeout($this->maxTimeout);
               $this->multiRequest->setSessionId($this->apiSessionObject->getSessionId());
               $this->multiRequest->setDebugRequests($this->apiSessionObject->getDebug());
           }
@@ -739,6 +753,7 @@ if (!class_exists('Gpf_Rpc_Request', false)) {
           $multiRequest = $this->getMultiRequest();
           $multiRequest->add($this);
           $multiRequest->useNewStyleRequestsEncoding($this->useNewStyleRequestsEncoding);
+          $multiRequest->setMaxTimeout($this->maxTimeout);
       }
   
       public function sendNow() {
@@ -886,7 +901,13 @@ if (!class_exists('Gpf_Http', false)) {
       }
   
       public static function isSSL() {
-          return @isset($_SERVER['HTTPS']);
+          if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) == "https") {
+              return true;
+          }
+          if (isset($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) != "off") {
+              return true;
+          }
+          return false;
       }
   
       private static function isValidIp($ip) {
@@ -1566,6 +1587,8 @@ if (!class_exists('Gpf_Net_Http_Request', false)) {
   	private $query = '';
   	private $fragment = '';
   	private $cookies = '';
+  	
+  	private $maxTimeout = null;
   
   	private $body = '';
   	private $headers = array();
@@ -1587,6 +1610,14 @@ if (!class_exists('Gpf_Net_Http_Request', false)) {
               $cookies .= "$key=$value; ";
           }
           return $cookies;
+      }
+      
+      public function getMaxTimeout() {
+          return $this->maxTimeout;
+      }
+      
+      public function setMaxTimeout($timeout) {
+          $this->maxTimeout = $timeout;
       }
   
   	public function getCookiesHeader() {
@@ -1882,9 +1913,14 @@ if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
        * @return Gpf_Net_Http_Response
        */
       private function executeWithSocketOpen(Gpf_Net_Http_Request $request) {
+          $timeout = self::CONNECTION_TIMEOUT;
+          if ($request->getMaxTimeout() != '') {
+              $timeout = $request->getMaxTimeout();
+          }
+          
           $scheme = ($request->getScheme() == 'ssl' || $request->getScheme() == 'https') ? 'ssl://' : '';
           $proxySocket = @fsockopen($scheme . $request->getHost(), $request->getPort(), $errorNr,
-          $errorMessage, self::CONNECTION_TIMEOUT);
+          $errorMessage, $timeout);
   
           if($proxySocket === false) {
               $gpfErrorMessage = $this->_sys('Could not connect to server: %s:%s, Failed with error: %s', $request->getHost(), $request->getPort(), $errorMessage);
@@ -1953,13 +1989,16 @@ if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
           }
           @curl_setopt ($session, CURLOPT_SSL_VERIFYHOST, 0);
           @curl_setopt ($session, CURLOPT_SSL_VERIFYPEER, 0);
+          if ($request->getMaxTimeout() != '') {
+              @curl_setopt($ch, CURLOPT_TIMEOUT, $request->getMaxTimeout()); 
+          }
   
           $this->setupCurlProxyServer($session, $request);
   
           // Make the call
           $result = curl_exec($session);
           $error = curl_error($session);
- 
+  
           curl_close($session);
   
           if (strlen($error)) {
@@ -3161,7 +3200,7 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           $line = $callingFile['line'];
   
           $ip = Gpf_Http::getRemoteIp();
-          if ($ip = '') {
+          if ($ip == '') {
               $ip = '127.0.0.1';
           }
   
@@ -6049,7 +6088,9 @@ if (!class_exists('Pap_Api_RecurringCommissionsGrid', false)) {
 
 if (!class_exists('Pap_Api_PayoutsGrid', false)) {
   class Pap_Api_PayoutsGrid extends Gpf_Rpc_GridRequest {
-      
+  
+      const PAP_MERCHANTS_PAYOUT_PAYAFFILIATESFORM_SUCCESS = 'success';
+  
       private $affiliatesToPay = array();
       
       public function __construct(Gpf_Api_Session $session) {
@@ -6067,28 +6108,12 @@ if (!class_exists('Pap_Api_PayoutsGrid', false)) {
               throw new Gpf_Exception('You must select at least one affiliate to pay.');
           }
           try {
-              $this->sendMarkTransactionsCall();
-          } catch (Gpf_Exception $e) {
-              throw new Gpf_Exception('Error during marking as pending payments: ' . $e->getMessage());
-          }
-          try {
              $this->sendPayTransactionsCall($paymentNote, $affiliateNote, $send_payment_to_affiliate, $send_generated_invoices_to_merchant, $send_generated_invoices_to_affiliates);
           } catch (Gpf_Exception $e) {
               throw new Gpf_Exception('Error during paying affiliates: ' . $e->getMessage());
           }
       }
-      
-      protected function sendMarkTransactionsCall() {
-          $request = new Gpf_Rpc_ActionRequest('Pap_Merchants_Payout_PayAffiliatesFormExportGrid', 'markTransactionsAsPaymentPending', $this->apiSessionObject);
-          $request->addParam('ids', new Gpf_Rpc_Array($this->getAffiliatesToPay()));
-          $request->addParam('filters', new Gpf_Rpc_Array($this->getFilters()));
-          $request->sendNow();
-          
-          if ($request->getResponseError() != '') {
-              throw new Gpf_Exception($request->getResponseError());
-          }
-      }
-      
+  
       protected function sendPayTransactionsCall($paymentNote, $affiliateNote, $send_payment_to_affiliate, $send_generated_invoices_to_merchant, $send_generated_invoices_to_affiliates) {
           $request = new Gpf_Rpc_FormRequest('Pap_Merchants_Payout_PayAffiliatesForm', 'payAffiliates', $this->apiSessionObject);
           $request->setField('paymentNote', $paymentNote);
@@ -6096,13 +6121,20 @@ if (!class_exists('Pap_Api_PayoutsGrid', false)) {
           $request->setField('send_payment_to_affiliate', $send_payment_to_affiliate);
           $request->setField('send_generated_invoices_to_merchant', $send_generated_invoices_to_merchant);
           $request->setField('send_generated_invoices_to_affiliates', $send_generated_invoices_to_affiliates);
+          $request->addParam('ids', new Gpf_Rpc_Array($this->getAffiliatesToPay()));
+          $request->addParam('filters', new Gpf_Rpc_Array($this->getFilters()));
           $request->sendNow();
-         
+  
           if ($request->getResponseError() != '') {
               throw new Gpf_Exception($request->getResponseError());
           }
+          $response = $request->getStdResponse();
+  
+          if ($response->success == 'Y' && strpos($response->infoMessage, self::PAP_MERCHANTS_PAYOUT_PAYAFFILIATESFORM_SUCCESS) !== 0 ) {
+              $request->sendNow();
+          }
       }
-      
+  
       public function addAllAffiliatesToPay() {
           $this->checkMerchantRole();
           try {
@@ -6185,6 +6217,6 @@ if (!class_exists('Gpf_Net_Http_Client', false)) {
 }
 /*
 VERSION
-1224b7d00841713d2b71dedc2459ead3
+c5b5325b17f6b24a9b9d6aacffd2a608
 */
 ?>

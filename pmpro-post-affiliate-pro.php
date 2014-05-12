@@ -3,7 +3,7 @@
 Plugin Name: PMPro Post Affiliate Pro Integration
 Plugin URI: http://www.paidmembershipspro.com/wp/pmpro-post-affiliate-pro/
 Description: Process an affiliate via Post Affiliate Pro after a PMPro checkout.
-Version: .2.1
+Version: .2.1.1
 Author: Stranger Studios
 Author URI: http://www.strangerstudios.com
 		 
@@ -52,7 +52,7 @@ function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaig
     $level_id = $order->membership_id;
     $level = pmpro_getLevel($level_id);
 
-    $sale1->setProductID($level->name);
+    $sale1->setProductID(sanitize_title($level->name, "pmpro-level-" . $level_id));
 	
 	if(!empty($affiliate_code))
 		$sale1->setAffiliateID($affiliate_code);

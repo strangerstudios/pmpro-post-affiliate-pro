@@ -1,6 +1,6 @@
 <?php
 /*
-Plugin Name: PMPro Post Affiliate Pro Integration
+Plugin Name: Paid Memberships Pro - Post Affiliate Pro Integration Add On
 Plugin URI: http://www.paidmembershipspro.com/wp/pmpro-post-affiliate-pro/
 Description: Process an affiliate via Post Affiliate Pro after a PMPro checkout.
 Version: .2.1
@@ -18,7 +18,7 @@ define('PAP_ACCOUNT', 'default1');
 function pap_login()
 {
 	require_once(dirname(__FILE__) . "/lib/PapApi.class.php");
-	$session = new Gpf_Api_Session(URL_TO_PAP . "scripts/server.php");
+	$session = new Gpf_Api_Session(URL_TO_PAP . "scripts/server.php");	
 	if(!$session->login(PAP_LOGIN, PAP_PASS)) {
 		//if admin, show notice. else ignore
 		if(current_user_can("manage_options"))
@@ -229,3 +229,19 @@ function pap_pmpro_wp_head()
 	}
 }
 add_action("wp_head", "pap_pmpro_wp_head");
+
+/*
+Function to add links to the plugin row meta
+*/
+function pap_pmpro_plugin_row_meta($links, $file) {
+	if(strpos($file, 'pmpro-post-affiliate-pro.php') !== false)
+	{
+		$new_links = array(
+			'<a href="' . esc_url('http://www.paidmembershipspro.com/add-ons/third-party-integration/pmpro-post-affiliate-pro-integration/')  . '" title="' . esc_attr( __( 'View Documentation', 'pmpro' ) ) . '">' . __( 'Docs', 'pmpro' ) . '</a>',
+			'<a href="' . esc_url('http://paidmembershipspro.com/support/') . '" title="' . esc_attr( __( 'Visit Customer Support Forum', 'pmpro' ) ) . '">' . __( 'Support', 'pmpro' ) . '</a>',
+		);
+		$links = array_merge($links, $new_links);
+	}
+	return $links;
+}
+add_filter('plugin_row_meta', 'pap_pmpro_plugin_row_meta', 10, 2);

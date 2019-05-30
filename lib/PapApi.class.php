@@ -9,17 +9,17 @@
  *   Version 1.0 (the "License"); you may not use this file except in compliance
  *   with the License. You may obtain a copy of the License at
  *   http://www.qualityunit.com/licenses/gpf
- *   Generated on: 2013-11-20 00:43:16
- *   PAP version: 5.0.10.1, GPF version: 1.2.3.0
+ *   Generated on: 2019-04-30 03:40:34
+ *   PAP version: 5.7.17.7, GPF version: 1.3.58.0
  *   
  */
 
 @ini_set('session.gc_maxlifetime', 28800);
 @ini_set('session.cookie_path', '/');
 @ini_set('session.use_cookies', true);
-@ini_set('magic_quotes_runtime', false);
 @ini_set('session.use_trans_sid', false);
-@ini_set('zend.ze1_compatibility_mode', false);
+
+define('PAP_VERSION', '5.7.17.7');
 
 if (!class_exists('Gpf', false)) {
     class Gpf {
@@ -28,20 +28,20 @@ if (!class_exists('Gpf', false)) {
     }
 }
 
-if (!class_exists('Gpf_Object', false)) {		
+if (!class_exists('Gpf_Object', false)) {
     class Gpf_Object {
         protected function createDatabase() {
             return Gpf_DbEngine_Database::getDatabase();
         }
-    
+
         public function _($message) {
             return $message;
         }
-    
+
         public function _localize($message) {
             return $message;
         }
-    
+
         public function _sys($message) {
             return $message;
         }
@@ -159,6 +159,8 @@ if (!class_exists('Gpf_Rpc_Server', false)) {
        */
       private $dataDecoder;
   
+      private $isStripHtmlTags = false;
+  
       public function __construct() {
       }
   
@@ -177,6 +179,9 @@ if (!class_exists('Gpf_Rpc_Server', false)) {
        */
       public function executeAndEcho($request = '') {
           $response = $this->encodeResponse($this->execute($request));
+          if ($this->isStripHtmlTags) {
+              $response = strip_tags($response);
+          }
           Gpf_ModuleBase::startGzip();
           echo $response;
           Gpf_ModuleBase::flushGzip();
@@ -200,6 +205,13 @@ if (!class_exists('Gpf_Rpc_Server', false)) {
               $response = $this->executeRequest($params);
           } catch (Exception $e) {
               return new Gpf_Rpc_ExceptionResponse($e);
+          }
+          if (!$this->isFormRequest($request)) {
+              Gpf_Http::setHeader('Content-Type', 'application/json; charset=utf-8');
+          } else {
+              if ($response instanceof Gpf_Rpc_Form && $params->get(self::FORM_RESPONSE) != self::HANDLER_WINDOW_NAME) {
+                  $this->isStripHtmlTags = true;
+              }
           }
           return $response;
       }
@@ -306,17 +318,20 @@ if (!class_exists('Gpf_Rpc_Server', false)) {
        * @return Gpf_Rpc_Serializable
        */
       public function run(Gpf_Rpc_Params $params) {
+          $response = new Gpf_Rpc_Array();
+          foreach ($this->getRequestsArray($params) as $request) {
+              $response->add($this->executeRequest(new Gpf_Rpc_Params($request)));
+          }
+          return $response;
+      }
+  
+      public function getRequestsArray(Gpf_Rpc_Params $params) {
           $requestArray = $params->get(self::REQUESTS);
   
           if ($requestArray === null) {
               $requestArray = $params->get(self::REQUESTS_SHORT);
           }
-  
-          $response = new Gpf_Rpc_Array();
-          foreach ($requestArray as $request) {
-              $response->add($this->executeRequest(new Gpf_Rpc_Params($request)));
-          }
-          return $response;
+          return $requestArray;
       }
   
       /**
@@ -371,7 +386,7 @@ if (!class_exists('Gpf_Rpc_MultiRequest', false)) {
       public function useNewStyleRequestsEncoding($useNewStyle) {
           $this->useNewStyleRequestsEncoding = $useNewStyle;
       }
-      
+  
       public function setMaxTimeout($timeout) {
           $this->maxTimeout = $timeout;
       }
@@ -406,6 +421,9 @@ if (!class_exists('Gpf_Rpc_MultiRequest', false)) {
   
           $client = new Gpf_Net_Http_Client();
           $response = $client->execute($request);
+          if ($response->getResponseCode() == 429) {
+              throw new Gpf_Exception($this->_('Too Many Requests. Please try to send request later.'));
+          }
           return $response->getBody();
       }
   
@@ -572,12 +590,15 @@ if (!class_exists('Gpf_Rpc_Params', false)) {
   
       public function getSessionId() {
           $sessionId = $this->get(self::SESSION_ID);
+          if (is_array($sessionId) || is_object($sessionId)) {
+              $sessionId = null;
+          }
           if ($sessionId === null || strlen(trim($sessionId)) == 0) {
               Gpf_Session::create(new Gpf_ApiModule());
           }
           return $sessionId;
       }
-      
+  
       public function clearSessionId() {
           $this->set(self::SESSION_ID, null);
       }
@@ -604,6 +625,9 @@ if (!class_exists('Gpf_Exception', false)) {
       private $id;
   
       public function __construct($message,$code = null) {
+          if (defined('FULL_EXCEPTION_TRACE')) {
+              $message .= "<br>\nTRACE:<br>\n" . $this->getTraceAsString();
+          }
           parent::__construct($message,$code);
       }
   
@@ -833,7 +857,7 @@ if (!class_exists('Gpf_Http', false)) {
        * @var Gpf_HttpResponse
        */
       private static $instance = null;
-      
+  
       /**
        * @return Gpf_Http
        */
@@ -843,19 +867,19 @@ if (!class_exists('Gpf_Http', false)) {
           }
           return self::$instance;
       }
-      
-      public static function setInstance(Gpf_HttpResponse $instance) {
+  
+      public static function setInstance(Gpf_HttpResponse $instance = null) {
           self::$instance = $instance;
       }
-      
+  
       public static function setCookie($name, $value = null, $expire = null, $path = null, $domain = null, $secure = null, $httpOnly = null) {
           self::getInstance()->setCookieValue($name, $value, $expire, $path, $domain, $secure, $httpOnly);
       }
-      
+  
       public static function setHeader($name, $value, $httpResponseCode = null) {
           self::getInstance()->setHeaderValue($name, $value, true, $httpResponseCode);
       }
-      
+  
       public function setHeaderValue($name, $value, $replace = true, $httpResponseCode = null) {
           $fileName = '';
           $line = '';
@@ -864,34 +888,45 @@ if (!class_exists('Gpf_Http', false)) {
           }
           header($name . ': ' . $value, $replace, $httpResponseCode);
       }
-      
+  
       public function setCookieValue($name, $value = null, $expire = null, $path = null, $domain = null, $secure = null, $httpOnly = null) {
           setcookie($name, $value, $expire, $path, $domain, $secure, $httpOnly);
       }
-      
+  
       public static function getCookie($name) {
           if (!array_key_exists($name, $_COOKIE)) {
               return null;
           }
           return $_COOKIE[$name];
       }
-      
+  
       public static function getUserAgent() {
+          $userAgent = self::getUserAgentPart();
+          if (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+              $userAgent .= ' - ' . $_SERVER['HTTP_ACCEPT_LANGUAGE'];
+          }
+          return $userAgent;
+      }
+  
+      public static function getUserAgentPart() {
           if (isset($_SERVER['HTTP_USER_AGENT'])) {
               return $_SERVER['HTTP_USER_AGENT'];
           }
-          return null;
+          return '';
       }
   
       public static function getRemoteIp() {
+          return self::anonymizeIP(self::getRemoteIpFull());
+      }
+  
+      public static function getRemoteIpFull() {
+          if (isset($GLOBALS['TRACKING_IP_ADDRESS']) && $GLOBALS['TRACKING_IP_ADDRESS'] != '') {
+              return $GLOBALS['TRACKING_IP_ADDRESS'];
+          }
           if (isset($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-              $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-              $ipAddresses = explode(',', $ip);
-              foreach ($ipAddresses as $ipAddress) {
-                  $ipAddress = trim($ipAddress);
-                  if (self::isValidIp($ipAddress)) {
-                      return $ipAddress;
-                  }
+              $ip = self::parseXForwardedForIp($_SERVER['HTTP_X_FORWARDED_FOR']);
+              if ($ip != '') {
+                  return $ip;
               }
           }
           if (isset($_SERVER['REMOTE_ADDR'])) {
@@ -900,12 +935,37 @@ if (!class_exists('Gpf_Http', false)) {
           return '';
       }
   
+      public static function parseXForwardedForIp($ip) {
+          if (!strstr($ip, ',')) {
+              if (self::isValidIp($ip)) {
+                  return $ip;
+              } else {
+                  return '';
+              }
+          }
+          $ipAddresses = explode(',', $ip);
+          foreach ($ipAddresses as $ipAddress) {
+              $ipAddress = trim($ipAddress);
+              if (self::isValidIp($ipAddress)) {
+                  return $ipAddress;
+              }
+          }
+          return '';
+      }
+  
+  
       public static function isSSL() {
-          if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) == "https") {
+          if (isset($_SERVER['HTTPS']) && strlen($_SERVER['HTTPS']) > 0 && strtolower($_SERVER['HTTPS']) != 'off') {
               return true;
           }
-          if (isset($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) != "off") {
+          if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strlen($_SERVER['HTTP_X_FORWARDED_PROTO']) > 0 && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) == 'https') {
               return true;
+          }
+          if (isset($_SERVER['HTTP_CF_VISITOR']) && strlen($_SERVER['HTTP_CF_VISITOR']) > 0) {
+              $cfVisitor = Gpf_Rpc_Json::decodeStatic($_SERVER['HTTP_CF_VISITOR']);
+              if (isset($cfVisitor->scheme) && $cfVisitor->scheme == 'https') {
+                  return true;
+              }
           }
           return false;
       }
@@ -916,6 +976,11 @@ if (!class_exists('Gpf_Http', false)) {
           }
           return false;
       }
+  
+      public static function anonymizeIP($ip) {
+          return $ip;
+      }
+  
   }
 
 } //end Gpf_Http
@@ -930,7 +995,7 @@ if (!interface_exists('Gpf_Templates_HasAttributes', false)) {
 if (!class_exists('Gpf_Data_RecordHeader', false)) {
   class Gpf_Data_RecordHeader extends Gpf_Object {
       private $ids = array();
-      
+  
       /**
        * Create Record header object
        *
@@ -940,18 +1005,28 @@ if (!class_exists('Gpf_Data_RecordHeader', false)) {
           if($headerArray === null) {
               return;
           }
-          
+  
+          if (!$this->isIterable($headerArray)) {
+              $e = new Gpf_Exception('');
+              Gpf_Log::error('Not correct header: '.var_export($headerArray, true).' for RecordHeader, trace: '.$e->getTraceAsString());
+  
+              return;
+          }
+  
           foreach ($headerArray as $id) {
               $this->add($id);
           }
       }
-      
+  
       public function contains($id) {
           return array_key_exists($id, $this->ids);
       }
   
       public function add($id) {
-          if($this->contains($id)) {
+          if (!is_numeric($id) && !is_string($id)) {
+              throw new Gpf_Exception('Value cannot be used as key of array: '.var_export($id, true));
+          }
+          if ($this->contains($id)) {
               return;
           }
   
@@ -968,7 +1043,7 @@ if (!class_exists('Gpf_Data_RecordHeader', false)) {
           }
           return $this->ids[$id];
       }
-      
+  
       public function getSize() {
           return count($this->ids);
       }
@@ -980,13 +1055,17 @@ if (!class_exists('Gpf_Data_RecordHeader', false)) {
           }
           return $response;
       }
-          
+  
       public function toObject() {
           $result = array();
           foreach ($this->ids as $columnId => $columnIndex) {
               $result[] = $columnId;
           }
           return $result;
+      }
+  
+      private function isIterable($var) {
+          return (is_array($var) || $var instanceof Traversable || $var instanceof stdClass);
       }
   }
   
@@ -1029,7 +1108,7 @@ if (!class_exists('Gpf_Data_Record', false)) {
               $this->record[] = null;
           }
       }
-      
+  
       function getAttributes() {
           $ret = array();
           foreach ($this as $name => $value) {
@@ -1037,18 +1116,18 @@ if (!class_exists('Gpf_Data_Record', false)) {
           }
           return $ret;
       }
-      
+  
       /**
        * @return Gpf_Data_RecordHeader
        */
       public function getHeader() {
           return $this->header;
       }
-      
+  
       public function contains($id) {
           return $this->header->contains($id);
       }
-      
+  
       public function get($id) {
           $index = $this->header->getIndex($id);
           return $this->record[$index];
@@ -1058,20 +1137,20 @@ if (!class_exists('Gpf_Data_Record', false)) {
           $index = $this->header->getIndex($id);
           $this->record[$index] = $value;
       }
-      
+  
       public function add($id, $value) {
           $this->header->add($id);
           $this->set($id, $value);
       }
-      
+  
       public function toObject() {
           return $this->record;
       }
-      
+  
       public function loadFromObject(array $array) {
           $this->record = $array;
       }
-      
+  
       public function toText() {
           return implode('-', $this->record);
       }
@@ -1099,8 +1178,12 @@ if (!class_exists('Gpf_Data_Record', false)) {
       public function valid() {
           return $this->position < $this->header->getSize();
       }
-  }
   
+      public function translateRowColumn($column) {
+          $this->set($column, $this->_localizeNoReplace($this->get($column)));
+          return;
+      }
+  }
 
 } //end Gpf_Data_Record
 
@@ -1317,6 +1400,10 @@ if (!class_exists('Gpf_Data_RecordSet', false)) {
           $this->_array[] = $record;
       }
   
+      public function removeRecord($i) {
+          unset($this->_array[$i]);
+      }
+  
       /**
        * Adds new row to RecordSet
        *
@@ -1344,7 +1431,7 @@ if (!class_exists('Gpf_Data_RecordSet', false)) {
   
       public function loadFromObject($array) {
           if($array === null) {
-              throw new Gpf_Exception('Array must be not NULL');
+              throw new Gpf_Exception('Array cannot be NULL');
           }
           $this->_header = new Gpf_Data_RecordHeader($array[0]);
           for($i = 1; $i < count($array);$i++) {
@@ -1453,6 +1540,20 @@ if (!class_exists('Gpf_Data_RecordSet', false)) {
       }
   
       /**
+       * @param String $headerColumn
+       * @param String $value
+       * @return boolean
+       */
+      public function existsRecordValue($headerColumn, $value) {
+          foreach ($this->_array as $record) {
+              if ($record->get($headerColumn) == $value) {
+                  return true;
+              }
+          }
+          return false;
+      }
+  
+      /**
        * Creates shalow copy of recordset containing only headers
        *
        * @return Gpf_Data_RecordSet
@@ -1488,9 +1589,9 @@ if (!class_exists('Gpf_Data_RecordSet', false)) {
   
       private function compare($value1, $value2) {
           if ($this->sortType == Gpf_Data_RecordSet::SORT_ASC) {
-              return ($value1 < $value2) ? -1 : 1;
+              return (strtolower($value1) < strtolower($value2)) ? -1 : 1;
           }
-          return ($value1 < $value2) ? 1 : -1;
+          return (strtolower($value1) < strtolower($value2)) ? 1 : -1;
       }
   }
 
@@ -1510,6 +1611,10 @@ if (!class_exists('Gpf_Data_IndexedRecordSet', false)) {
       }
       
       public function addRecord(Gpf_Data_Record $record) {
+          $keyValue = $record->get($this->key);
+          if (!is_numeric($keyValue) && !is_string($keyValue)) {
+              throw new Gpf_Exception('Value cannot be used as key of array: '.var_export($keyValue, true));
+          }
           $this->_array[$record->get($this->key)] = $record;
       }
       
@@ -1567,6 +1672,9 @@ if (!class_exists('Gpf_Data_IndexedRecordSet', false)) {
 if (!class_exists('Gpf_Net_Http_Request', false)) {
   class Gpf_Net_Http_Request extends Gpf_Object {
   	const CRLF = "\r\n";
+      const NO_SSL_VERIFYHOST = 0;
+      const SSL_VERIFYHOST_EASY = 1;
+      const SSL_VERIFYHOST_NORMAL = 2;
   
   	private $method = 'GET';
   	private $url;
@@ -1587,8 +1695,9 @@ if (!class_exists('Gpf_Net_Http_Request', false)) {
   	private $query = '';
   	private $fragment = '';
   	private $cookies = '';
-  	
+      private $sslVerifyHost = self::NO_SSL_VERIFYHOST;
   	private $maxTimeout = null;
+  	private $userAgent = '';
   
   	private $body = '';
   	private $headers = array();
@@ -1602,22 +1711,34 @@ if (!class_exists('Gpf_Net_Http_Request', false)) {
   	}
   
       public function getCookiesString() {
-          $cookies = '';
           if (!is_array($this->cookies)) {
-              return $cookies;
+              return '';
           }
-          foreach ($this->cookies as $key => $value) {
-              $cookies .= "$key=$value; ";
-          }
-          return $cookies;
+          return urldecode(http_build_query($this->cookies, '', ';'));
       }
-      
+  
       public function getMaxTimeout() {
           return $this->maxTimeout;
       }
-      
+  
       public function setMaxTimeout($timeout) {
           $this->maxTimeout = $timeout;
+      }
+  
+      public function getUserAgent() {
+          return $this->userAgent;
+      }
+  
+      public function setUserAgent($userAgent) {
+          $this->userAgent = $userAgent;
+      }
+  
+      public function getSslVerifyHost() {
+          return $this->sslVerifyHost;
+      }
+  
+      public function setSslVerifyHost($sslVerifyHost) {
+          $this->sslVerifyHost = $sslVerifyHost;
       }
   
   	public function getCookiesHeader() {
@@ -1729,7 +1850,7 @@ if (!class_exists('Gpf_Net_Http_Request', false)) {
   	 */
   	public function setMethod($method) {
   		$method = strtoupper($method);
-  		if ($method != 'GET' && $method != 'POST') {
+  		if ($method != 'GET' && $method != 'POST' && $method != 'DELETE') {
   			throw new Gpf_Exception('Unsupported HTTP method: ' . $method);
   		}
   		$this->method = $method;
@@ -1882,6 +2003,7 @@ if (!class_exists('Gpf_Net_Http_Request', false)) {
 if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
   abstract class Gpf_Net_Http_ClientBase extends Gpf_Object {
       const CONNECTION_TIMEOUT = 20;
+      const MAX_REDIRECTS = 5;
   
       //TODO: rename this method to "send()"
       /**
@@ -1917,9 +2039,10 @@ if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
           if ($request->getMaxTimeout() != '') {
               $timeout = $request->getMaxTimeout();
           }
-          
+  
           $scheme = ($request->getScheme() == 'ssl' || $request->getScheme() == 'https') ? 'ssl://' : '';
-          $proxySocket = @fsockopen($scheme . $request->getHost(), $request->getPort(), $errorNr,
+          $port = ($scheme == 'ssl://' && $request->getPort() == 80 ? '443' : $request->getPort());
+          $proxySocket = @fsockopen($scheme . $request->getHost(), $port, $errorNr,
           $errorMessage, $timeout);
   
           if($proxySocket === false) {
@@ -1971,6 +2094,9 @@ if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
           if ($request->getMethod() == 'POST') {
               @curl_setopt ($session, CURLOPT_POST, true);
               @curl_setopt ($session, CURLOPT_POSTFIELDS, $request->getBody());
+          } elseif ($request->getMethod() == 'DELETE') {
+              curl_setopt($session, CURLOPT_CUSTOMREQUEST, 'DELETE');
+              curl_setopt($session, CURLOPT_POSTFIELDS, $request->getBody());
           }
   
           $cookies = $request->getCookiesString();
@@ -1982,15 +2108,25 @@ if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
           @curl_setopt($session, CURLOPT_CONNECTTIMEOUT, self::CONNECTION_TIMEOUT);
           @curl_setopt($session, CURLOPT_HTTPHEADER, $request->getHeaders());
           @curl_setopt($session, CURLOPT_FOLLOWLOCATION, true);
+          @curl_setopt($session, CURLOPT_MAXREDIRS, self::MAX_REDIRECTS);
           @curl_setopt($session, CURLOPT_RETURNTRANSFER, true);
+          @curl_setopt($session, CURLOPT_FAILONERROR, true);
           if ($request->getHttpPassword() != '' && $request->getHttpUser() != '') {
           	@curl_setopt($session, CURLOPT_USERPWD, $request->getHttpUser() . ":" . $request->getHttpPassword());
-          	@curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+          	@curl_setopt($session, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
           }
-          @curl_setopt ($session, CURLOPT_SSL_VERIFYHOST, 0);
-          @curl_setopt ($session, CURLOPT_SSL_VERIFYPEER, 0);
+          @curl_setopt($session, CURLOPT_SSL_VERIFYHOST, $request->getSslVerifyHost());
+          if ($request->getSslVerifyHost() == Gpf_Net_Http_Request::NO_SSL_VERIFYHOST) {
+              @curl_setopt($session, CURLOPT_SSL_VERIFYPEER, false);
+          } else {
+              @curl_setopt($session, CURLOPT_SSL_VERIFYPEER, true);
+          }
+          @curl_setopt($session, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
           if ($request->getMaxTimeout() != '') {
-              @curl_setopt($ch, CURLOPT_TIMEOUT, $request->getMaxTimeout()); 
+              @curl_setopt($session, CURLOPT_TIMEOUT, $request->getMaxTimeout());
+          }
+          if ($request->getUserAgent() != '') {
+              @curl_setopt($session, CURLOPT_USERAGENT, $request->getUserAgent());
           }
   
           $this->setupCurlProxyServer($session, $request);
@@ -2077,7 +2213,13 @@ if (!class_exists('Gpf_Net_Http_Response', false)) {
   
       public function getResponseCode() {
           $headers = $this->getHeaders();
+          if ($headers == false || !isset($headers['status'])) {
+              return false;
+          }
           preg_match('/.*?\s([0-9]*?)\s.*/', $headers['status'], $match);
+          if (!isset($match[1])) {
+              return false;
+          }
           return $match[1];
       }
   
@@ -2085,10 +2227,11 @@ if (!class_exists('Gpf_Net_Http_Response', false)) {
           return $this->httpParseHeaders($this->header);
       }
   
-      private function httpParseHeaders($headers=false){
-          if($headers === false){
+      private function httpParseHeaders($headers = false){
+          if($headers == false){
               return false;
           }
+          $headerdata = false;
           $headers = str_replace("\r","",$headers);
           $headers = explode("\n",$headers);
           foreach($headers as $value){
@@ -2134,9 +2277,9 @@ if (!class_exists('Gpf_Rpc_Form', false)) {
           $header->add(self::FIELD_VALUES);
           $header->add(self::FIELD_ERROR);
           $this->fields->setHeader($header);
-          
+  
           $this->validator = new Gpf_Rpc_Form_Validator_FormValidatorCollection($this);
-          
+  
           if($params) {
               $this->loadFieldsFromArray($params->get("fields"));
           }
@@ -2150,21 +2293,23 @@ if (!class_exists('Gpf_Rpc_Form', false)) {
       public function addValidator(Gpf_Rpc_Form_Validator_Validator $validator, $fieldName, $fieldLabel = null) {
           $this->validator->addValidator($validator, $fieldName, $fieldLabel);
       }
-      
+  
       /**
        * @return boolean
        */
       public function validate() {
           return $this->validator->validate();
       }
-      
+  
       public function loadFieldsFromArray($fields) {
-          for ($i = 1; $i < count($fields); $i++) {
-              $field = $fields[$i];
-              $this->fields->add($field);
+          if (is_array($fields)) {
+              for ($i = 1; $i < count($fields); $i++) {
+                  $field = $fields[$i];
+                  $this->fields->add($field);
+              }
           }
       }
-      
+  
       /**
        *
        * @return ArrayIterator
@@ -2172,39 +2317,44 @@ if (!class_exists('Gpf_Rpc_Form', false)) {
       public function getIterator() {
           return $this->fields->getIterator();
       }
-      
+  
       public function addField($name, $value) {
           $record = $this->fields->createRecord($name);
           $record->set(self::FIELD_VALUE, $value);
       }
-      
+  
       public function setField($name, $value, $values = null, $error = "") {
           $record = $this->fields->createRecord($name);
           $record->set(self::FIELD_VALUE, $value);
           $record->set(self::FIELD_VALUES, $values);
           $record->set(self::FIELD_ERROR, $error);
       }
-      
+  
       public function setFieldError($name, $error) {
           $this->isError = true;
           $record = $this->fields->getRecord($name);
           $record->set(self::FIELD_ERROR, $error);
       }
-      
+  
       public function getFieldValue($name) {
           $record = $this->fields->getRecord($name);
           return $record->get(self::FIELD_VALUE);
       }
-      
+  
+      public function getFieldValues($name) {
+          $record = $this->fields->getRecord($name);
+          return $record->get(self::FIELD_VALUES);
+      }
+  
       public function getFieldError($name) {
           $record = $this->fields->getRecord($name);
           return $record->get(self::FIELD_ERROR);
       }
-      
+  
       public function existsField($name) {
           return $this->fields->existsRecord($name);
       }
-       
+  
       public function load(Gpf_Data_Row $row) {
           foreach($row as $columnName => $columnValue) {
               $this->setField($columnName, $row->get($columnName));
@@ -2217,16 +2367,19 @@ if (!class_exists('Gpf_Rpc_Form', false)) {
       public function getFields() {
           return $this->fields;
       }
-      
-      public function fill(Gpf_Data_Row $row) {
+  
+      public function fill(Gpf_Data_Row $row, array $writableFields = array()) {
           foreach ($this->fields as $field) {
+              if (count($writableFields) > 0 && !in_array($field->get(self::FIELD_NAME), $writableFields)) {
+                  continue;
+              }
               try {
                   $row->set($field->get(self::FIELD_NAME), $field->get(self::FIELD_VALUE));
               } catch (Exception $e) {
               }
           }
       }
-      
+  
       public function toObject() {
           $response = new stdClass();
           $response->fields = $this->fields->toObject();
@@ -2239,57 +2392,59 @@ if (!class_exists('Gpf_Rpc_Form', false)) {
           }
           return $response;
       }
-      
+  
       public function loadFromObject(stdClass $object) {
           if ($object->success == Gpf::YES) {
           	$this->setInfoMessage($object->message);
           } else {
           	$this->setErrorMessage($object->message);
           }
-          
+  
           $this->fields = new Gpf_Data_IndexedRecordSet(self::FIELD_NAME);
           $this->fields->loadFromObject($object->fields);
       }
-      
+  
       public function toText() {
-          return var_dump($this->toObject());
+          ob_start();
+          var_dump($this->toObject());
+          return ob_get_clean();
       }
   
       public function setErrorMessage($message) {
           $this->isError = true;
           $this->errorMessage = $message;
       }
-      
+  
       public function getErrorMessage() {
           if ($this->isError) {
               return $this->errorMessage;
           }
           return "";
       }
-      
+  
       public function setInfoMessage($message) {
           $this->infoMessage = $message;
       }
-      
+  
       public function setSuccessful() {
           $this->isError = false;
       }
-      
+  
       public function getInfoMessage() {
           if ($this->isError) {
               return "";
           }
           return $this->infoMessage;
       }
-      
-      
+  
+  
       /**
        * @return boolean
        */
       public function isSuccessful() {
           return !$this->isError;
       }
-      
+  
       /**
        * @return boolean
        */
@@ -2341,7 +2496,7 @@ if (!class_exists('Gpf_Rpc_Form_Validator_FormValidatorCollection', false)) {
               }
           }
           if ($errorMsg) {
-              $this->form->setErrorMessage($this->_('There were errors, please check highlighted fields'));
+              $this->form->setErrorMessage($this->_('There were errors, please check the highlighted fields'));
           }
           return !$errorMsg;
       }
@@ -2486,28 +2641,28 @@ if (!class_exists('Gpf_Rpc_Data', false)) {
       const VALUE = "value";
       const DATA = "data";
       const ID = "id";
-      
+  
   	/**
   	 * @var Gpf_Data_IndexedRecordSet
   	 */
       private $params;
-      
+  
       /**
        * @var string
        */
       private $id;
-      
-      
+  
+  
       /**
        * @var Gpf_Rpc_FilterCollection
        */
       private $filters;
-      
+  
       /**
        * @var Gpf_Data_IndexedRecordSet
        */
       private $response;
-      
+  
       /**
        *
        * @return Gpf_Data_IndexedRecordSet
@@ -2515,7 +2670,7 @@ if (!class_exists('Gpf_Rpc_Data', false)) {
       public function getParams() {
           return $this->params;
       }
-      
+  
       /**
        * Create instance to handle DataRequest
        *
@@ -2525,22 +2680,22 @@ if (!class_exists('Gpf_Rpc_Data', false)) {
       	if($params === null) {
       	    $params = new Gpf_Rpc_Params();
       	}
-          
+  
       	$this->filters = new Gpf_Rpc_FilterCollection($params);
-          
+  
       	$this->params = new Gpf_Data_IndexedRecordSet(self::NAME);
       	$this->params->setHeader(array(self::NAME, self::VALUE));
-          
-          if ($params->exists(self::DATA) !== null) {
+  
+          if ($params->exists(self::DATA)) {
               $this->loadParamsFromArray($params->get(self::DATA));
           }
-          
+  
           $this->id = $params->get(self::ID);
-          
+  
           $this->response = new Gpf_Data_IndexedRecordSet(self::NAME);
           $this->response->setHeader(array(self::NAME, self::VALUE));
       }
-      
+  
      /**
        * Return id
        *
@@ -2549,7 +2704,7 @@ if (!class_exists('Gpf_Rpc_Data', false)) {
       public function getId() {
           return $this->id;
       }
-      
+  
       /**
        * Return parameter value
        *
@@ -2563,16 +2718,16 @@ if (!class_exists('Gpf_Rpc_Data', false)) {
              return null;
           }
       }
-      
+  
       public function setParam($name, $value) {
           self::setValueToRecordset($this->params, $name, $value);
       }
-      
+  
       public function loadFromObject(array $object) {
           $this->response->loadFromObject($object);
           $this->params->loadFromObject($object);
       }
-          
+  
       /**
        * @return Gpf_Rpc_FilterCollection
        */
@@ -2585,20 +2740,20 @@ if (!class_exists('Gpf_Rpc_Data', false)) {
              $record = $recordset->getRecord($name);
           } catch (Gpf_Data_RecordSetNoRowException $e) {
              $record = $recordset->createRecord();
-             $record->set(self::NAME, $name);
+             $record->set(self::NAME, $name . '');
              $recordset->addRecord($record);
           }
           $record->set(self::VALUE, $value);
       }
-      
+  
       public function setValue($name, $value) {
           self::setValueToRecordset($this->response, $name, $value);
       }
-      
+  
       public function getSize() {
           return $this->response->getSize();
       }
-      
+  
       public function getValue($name) {
           try {
               return $this->response->getRecord($name)->get(self::VALUE);
@@ -2606,7 +2761,7 @@ if (!class_exists('Gpf_Rpc_Data', false)) {
           }
           return null;
       }
-      
+  
       public function toObject() {
       	return $this->response->toObject();
       }
@@ -2628,7 +2783,7 @@ if (!class_exists('Gpf_Rpc_FilterCollection', false)) {
   class Gpf_Rpc_FilterCollection extends Gpf_Object implements IteratorAggregate {
   
       /**
-       * @var array of Gpf_SqlBuilder_Filter
+       * @var Gpf_SqlBuilder_Filter[]
        */
       private $filters;
   
@@ -2638,9 +2793,41 @@ if (!class_exists('Gpf_Rpc_FilterCollection', false)) {
               $this->init($params);
           }
       }
-      
+  
       public function add(array $filterArray) {
       	$this->filters[] = new Gpf_SqlBuilder_Filter($filterArray);
+      }
+  
+      public function addFilter(Gpf_SqlBuilder_Filter $filter) {
+          $this->filters[] = $filter;
+      }
+  
+      public function loadDefaultFilterCollection($filterType) {
+          if ($filterType == '') {
+              return;
+          }
+  
+          $filterId = Gpf_Db_Table_Filters::getInstance()->getDefaultFilterId($filterType);
+          if ($filterId == '') {
+              return;
+          }
+          $this->loadFilterById($filterId);
+      }
+  
+      public function loadFilterById($filterId) {
+          $filters = new Gpf_Db_FilterCondition();
+          $filters->setFilterId($filterId);
+          $collection = $filters->loadCollection();
+  
+          foreach ($collection as $filterCondition) {
+              if ($filterCondition->get(Gpf_Db_Table_FilterConditions::VALUE) != '') {
+                  $this->add(array(
+                          Gpf_SqlBuilder_Filter::FILTER_CODE => $filterCondition->get(Gpf_Db_Table_FilterConditions::CODE),
+                          Gpf_SqlBuilder_Filter::FILTER_OPERATOR => $filterCondition->get(Gpf_Db_Table_FilterConditions::OPERATOR),
+                          Gpf_SqlBuilder_Filter::FILTER_VALUE => $filterCondition->get(Gpf_Db_Table_FilterConditions::VALUE)
+                  ));
+              }
+          }
       }
   
       private function init(Gpf_Rpc_Params $params) {
@@ -2672,7 +2859,7 @@ if (!class_exists('Gpf_Rpc_FilterCollection', false)) {
        * If filter with specified code does not exists null is returned.
        *
        * @param string $code
-       * @return array<Gpf_SqlBuilder_Filter>
+       * @return Gpf_SqlBuilder_Filter[]
        */
       public function getFilter($code) {
       	$filters = array();
@@ -2683,7 +2870,7 @@ if (!class_exists('Gpf_Rpc_FilterCollection', false)) {
           }
           return $filters;
       }
-      
+  
       public function isFilter($code) {
           foreach ($this->filters as $filter) {
               if ($filter->getCode() == $code) {
@@ -2692,7 +2879,7 @@ if (!class_exists('Gpf_Rpc_FilterCollection', false)) {
           }
           return false;
       }
-      
+  
       public function getFilterValue($code) {
           $filters = $this->getFilter($code);
           if (count($filters) == 1) {
@@ -2716,6 +2903,51 @@ if (!class_exists('Gpf_Rpc_FilterCollection', false)) {
   }
 
 } //end Gpf_Rpc_FilterCollection
+
+if (!class_exists('Gpf_Rpc_PhpErrorHandler', false)) {
+  class Gpf_Rpc_PhpErrorHandler {
+      
+      private $errorTypes;
+      private $callback;
+      private $params;
+  
+      public function handleError($severity, $message, $filename, $lineno) {
+          if (error_reporting() == 0) {
+              return;
+          }
+          if (error_reporting() & $severity) {
+              $exception = new ErrorException($message, 0, $severity, $filename, $lineno);
+              Gpf_Log::warning('Error calling function: ' . $this->getFunctionName($this->callback) . ', with parameters: ' . var_export($this->params, true) . '. Error trace: ' . $exception->getTraceAsString());
+              if ($severity != E_WARNING && $severity != E_NOTICE) {
+                  throw $exception;
+              }
+          }
+      }
+  
+      public function callMethod($callback, $params = null, $errorTypes = E_ALL) {
+          $this->callback = $callback;
+          $this->errorTypes = $errorTypes;
+          $this->params = $params;
+          $oldErrorHandler = set_error_handler(array(&$this, 'handleError'), $errorTypes);
+          try {
+              $result = call_user_func_array($callback, $params);
+          } catch (ErrorException $e) {
+              $result = null;
+          }
+          set_error_handler($oldErrorHandler);
+          return $result;
+      }
+  
+      private function getFunctionName($callback) {
+          if (is_array($callback)) {
+              return get_class($callback[0]).'->'.$callback[1];
+          }
+          return $callback;
+      }
+  }
+  
+
+} //end Gpf_Rpc_PhpErrorHandler
 
 if (!class_exists('Gpf_Php', false)) {
   class Gpf_Php {
@@ -2769,6 +3001,7 @@ if (!class_exists('Gpf_Rpc_Action', false)) {
       private $infoMessage = "";
       private $successCount = 0;
       private $errorCount = 0;
+      private $isFinished = true;
       /**
        * @var Gpf_Rpc_Params
        */
@@ -2783,6 +3016,10 @@ if (!class_exists('Gpf_Rpc_Action', false)) {
           $this->errorMessage = $errorMessage;
       }
   
+      /**
+       * @return ArrayIterator|Gpf_View_GridService_IdsIterator
+       * @throws Gpf_Exception
+       */
       public function getIds() {
           if ($this->params->exists(self::IDS)) {
               return new ArrayIterator($this->params->get(self::IDS));
@@ -2801,6 +3038,14 @@ if (!class_exists('Gpf_Rpc_Action', false)) {
           return $this->params->exists($name);
       }
       
+      /**
+       * 
+       * @return Gpf_Rpc_Params
+       */
+      public function getParams() {
+          return $this->params;
+      }
+      
       protected function getRequestIdsIterator() {
           $json = new Gpf_Rpc_Json();
           $requestParams = new Gpf_Rpc_Params($json->decode($this->params->get(self::IDS_REQUEST)));
@@ -2815,6 +3060,7 @@ if (!class_exists('Gpf_Rpc_Action', false)) {
       public function toObject() {
           $response = new stdClass();
           $response->success = Gpf::YES;
+          $response->finished = $this->isFinished ? Gpf::YES : Gpf::NO;
           
           $response->errorMessage = "";
           if ($this->errorCount > 0) {
@@ -2828,6 +3074,10 @@ if (!class_exists('Gpf_Rpc_Action', false)) {
           }
           
           return $response;
+      }
+      
+      public function setNotFinished() {
+          $this->isFinished = false;
       }
       
       public function loadFromObject(stdClass $object) {
@@ -2858,17 +3108,21 @@ if (!class_exists('Gpf_Rpc_Action', false)) {
       public function getErrorMessage() {
           return $this->errorMessage;
       }
-      
+  
+      public function getInfoMessage() {
+          return $this->infoMessage;
+      }
+  
       public function setInfoMessage($message) {
           $this->infoMessage = $message;
       }
   
-      public function addOk() {
-          $this->successCount++;
+      public function addOk($count = 1) {
+          $this->successCount += $count;
       }
   
-      public function addError() {
-          $this->errorCount++;
+      public function addError($count = 1) {
+          $this->errorCount += $count;
       }
       
   }
@@ -3038,13 +3292,13 @@ if (!class_exists('Gpf_Log_Logger', false)) {
        * array of custom parameters
        */
       private $customParameters = array();
-      
+  
       private $disabledTypes = array();
-      
+  
       private $group = null;
       private $type = null;
       private $logToDisplay = false;
-      
+  
       /**
        * returns instance of logger class.
        * You can add instance name, if you want to have multiple independent instances of logger
@@ -3063,11 +3317,11 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           $instance = self::$instances[$instanceName];
           return $instance;
       }
-      
+  
       public static function isLoggerInsert($sqlString) {
           return strpos($sqlString, 'INSERT INTO ' . Gpf_Db_Table_Logs::getName()) !== false;
       }
-      
+  
       /**
        * attachs new log system
        *
@@ -3091,10 +3345,10 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           if(array_key_exists($type, $this->loggers)) {
           	return true;
           }
-      	
+  
           return false;
       }
-      
+  
       /**
        * returns true if debugging writes log to display
        *
@@ -3103,7 +3357,7 @@ if (!class_exists('Gpf_Log_Logger', false)) {
       public function isLogToDisplay() {
       	return $this->logToDisplay && !in_array(Gpf_Log_LoggerDisplay::TYPE, $this->disabledTypes);
       }
-      
+  
       public function removeAll() {
           $this->loggers = array();
           $this->customParameters = array();
@@ -3111,7 +3365,7 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           $this->logToDisplay = false;
           $this->group = null;
       }
-      
+  
       /**
        *
        * @param Gpf_Log_LoggerBase $logger
@@ -3136,22 +3390,22 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           	return $existingLogger;
           }
       }
-      
+  
       public function getGroup() {
           return $this->group;
       }
-          
+  
       public function setGroup($group = null) {
           $this->group = $group;
           if($group === null) {
               $this->group = Gpf_Common_String::generateId(10);
           }
       }
-      
+  
       public function setType($type) {
           $this->type = $type;
       }
-      
+  
       /**
        * function sets custom parameter for the logger
        *
@@ -3191,7 +3445,7 @@ if (!class_exists('Gpf_Log_Logger', false)) {
                   $group .= ' ' . $logGroup;
               }
           }
-  	
+  
           $callingFile = $this->findLogFile();
           $file = $callingFile['file'];
           if(isset($callingFile['classVariables'])) {
@@ -3199,18 +3453,21 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           }
           $line = $callingFile['line'];
   
-          $ip = Gpf_Http::getRemoteIp();
-          if ($ip == '') {
-              $ip = '127.0.0.1';
-          }
-  
           foreach ($this->loggers as $logger) {
-          	if(!in_array($logger->getType(), $this->disabledTypes)) {
+              if(!in_array($logger->getType(), $this->disabledTypes)) {
+                  if ($logger->getType() == Gpf_Log_LoggerDatabase::TYPE) {
+                      $ip = Gpf_Http::getRemoteIp();
+                  } else {
+                      $ip = Gpf_Http::getRemoteIpFull();
+                  }
+                  if ($ip == '') {
+                      $ip = '127.0.0.1';
+                  }
                   $logger->logMessage($time, $message, $logLevel, $group, $ip, $file, $line, $this->type);
               }
           }
       }
-      
+  
       /**
        * logs debug message
        *
@@ -3270,11 +3527,11 @@ if (!class_exists('Gpf_Log_Logger', false)) {
               unset($this->disabledTypes[$type]);
           }
       }
-      
+  
       public function enableAllTypes() {
           $this->disabledTypes = array();
       }
-      
+  
       /**
        *
        * @return Gpf_Log_LoggerBase
@@ -3291,12 +3548,12 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           }
           throw new Gpf_Log_Exception("Log system '$type' does not exist");
       }
-      
+  
       private function findLogFile() {
           $calls = debug_backtrace();
-          
+  
           $foundObject = null;
-          
+  
           // special handling for sql benchmarks
           if($this->sqlBenchmarkFound($calls)) {
               $foundObject = $this->findFileBySqlBenchmark();
@@ -3314,13 +3571,13 @@ if (!class_exists('Gpf_Log_Logger', false)) {
               if($last <0) {
                   $last = 0;
               }
-          
+  
               $foundObject = $calls[$last];
           }
-          
+  
           return $foundObject;
       }
-      
+  
       private function sqlBenchmarkFound($calls) {
           foreach($calls as $obj) {
               if(isset($obj['function']) && $obj['function'] == "sqlBenchmarkEnd") {
@@ -3329,7 +3586,7 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           }
           return false;
       }
-      
+  
       private function findFileBySqlBenchmark() {
           $foundFile = $this->findLatestObjectBeforeString("DbEngine");
           if($foundFile != null && is_object($foundFile['object'])) {
@@ -3337,7 +3594,7 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           }
           return $foundFile;
       }
-      
+  
       private function getObjectVariables($object) {
           if(is_object($object)) {
               $class = get_class($object);
@@ -3348,7 +3605,7 @@ if (!class_exists('Gpf_Log_Logger', false)) {
           }
           return '';
       }
-      
+  
       private function findFileByCallingMethod($calls) {
           $functionNames = array('debug', 'info', 'warning', 'error', 'critical', 'log');
           $foundObject = null;
@@ -3358,23 +3615,35 @@ if (!class_exists('Gpf_Log_Logger', false)) {
                   return $foundObject;
               }
           }
-          
+  
           return null;
       }
-      
+  
       private function findCallingFile($calls, $functionName) {
+          $previousObject = null;
+          $logMessage = null;
           foreach($calls as $obj) {
-              if(isset($obj['function']) && $obj['function'] == $functionName) {
-                  return $obj;
+              if ($logMessage == null) {
+                  if (isset($obj['function']) && $obj['function'] == $functionName) {
+                      $previousObject = $obj;
+                      if (isset($obj['args']) && is_array($obj['args']) && isset($obj['args'][0])) {
+                          $logMessage = $obj['args'][0];
+                      }
+                  }
+              } else {
+                  if (isset($obj['args']) && is_array($obj['args']) && isset($obj['args'][0]) && $logMessage == $obj['args'][0]) {
+                      $previousObject = $obj;
+                  } else {
+                      return $previousObject;
+                  }
               }
           }
-          
-          return null;
+          return $previousObject;
       }
-      
+  
       private function findLatestObjectBeforeString($text) {
           $callsReversed = array_reverse( debug_backtrace() );
-      
+  
           $lastObject = null;
           foreach($callsReversed as $obj) {
               if(!isset($obj['file'])) {
@@ -3415,6 +3684,9 @@ if (!class_exists('Gpf_Api_Session', false)) {
       const MERCHANT = 'M';
       const AFFILIATE = 'A';
   
+      const AUTHENTICATE_CLASS_NAME = 'Gpf_Api_AuthService';
+      const AUTHENTICATE_METHOD_NAME = 'authenticate';
+  
   	private $url;
   	private $sessionId = '';
   	private $debug = false;
@@ -3429,44 +3701,72 @@ if (!class_exists('Gpf_Api_Session', false)) {
   	 * @param $username
   	 * @param $password
   	 * @param $roleType Gpf_Api_Session::MERCHANT or Gpf_Api_Session::AFFILIATE
-  	 * @param $languageCode language code (e.g. en-US, de-DE, sk, cz, du, ...)
+  	 * @param string $languageCode language code (e.g. en-US, de-DE, sk, cz, du, ...)
   	 * @return boolean true if user was successfully logged
   	 */
-  	public function login($username, $password, $roleType = self::MERCHANT, $languageCode = null) {
-  		$request = new Gpf_Rpc_FormRequest("Gpf_Api_AuthService", "authenticate");
-  		$request->setUrl($this->url);
-  		$request->setField("username", $username);
-  		$request->setField("password", $password);
-  		$request->setField("roleType", $roleType);
-  		$request->setField('isFromApi', Gpf::YES);
-  		$request->setField('apiVersion', self::getAPIVersion());
-  		if($languageCode != null) {
-  		    $request->setField("language", $languageCode);
-  		}
+      public function login($username, $password, $roleType = self::MERCHANT, $languageCode = null) {
+      	return $this->authenticateRequest($username, $password, '', $roleType, $languageCode);
+      }
   
-  		$this->roleType = $roleType;
+  	/**
+  	 *
+  	 * @param $authtoken
+  	 * @param $roleType Gpf_Api_Session::MERCHANT or Gpf_Api_Session::AFFILIATE
+  	 * @param string $languageCode language code (e.g. en-US, de-DE, sk, cz, du, ...)
+  	 * @return boolean true if user was successfully logged
+  	 */
+      public function loginWithAuthToken($authtoken, $roleType = self::MERCHANT, $languageCode = null) {
+          return $this->authenticateRequest('', '', $authtoken, $roleType, $languageCode);
+      }
   
-  		try {
-  			$request->sendNow();
-  		} catch(Exception $e) {
-  			$this->setMessage("Connection error: ".$e->getMessage());
-  			return false;
-  		}
+  	/**
+  	 *
+  	 * @param $username
+  	 * @param $password
+  	 * @param $authtoken
+  	 * @param $roleType Gpf_Api_Session::MERCHANT or Gpf_Api_Session::AFFILIATE
+  	 * @param string $languageCode language code (e.g. en-US, de-DE, sk, cz, du, ...)
+  	 * @return boolean true if user was successfully logged
+  	 */
+      private function authenticateRequest($username, $password, $authtoken, $roleType = self::MERCHANT, $languageCode = null) {
+          $request = new Gpf_Rpc_FormRequest($this->getAuthenticateClassName(), self::AUTHENTICATE_METHOD_NAME, $this);
+          $request->setUrl($this->url);
+          if ($username != '' && $password != '') {
+              $request->setField('username', $username);
+              $request->setField('password', $password);
+          } else {
+              $request->setField('authToken', $authtoken);
+          }
+          $request->setField('roleType', $roleType);
+          $request->setField('isFromApi', Gpf::YES);
+          $request->setField('apiVersion', self::getAPIVersion());
+          if($languageCode != null) {
+              $request->setField("language", $languageCode);
+          }
   
-  		$form = $request->getForm();
-  		$this->checkApiVersion($form);
+          $this->roleType = $roleType;
   
-  		$this->message = $form->getInfoMessage();
+          try {
+              $request->sendNow();
+          } catch(Exception $e) {
+              $this->setMessage("Connection error: ".$e->getMessage());
+              return false;
+          }
   
-  		if($form->isSuccessful() && $form->existsField("S")) {
-  			$this->sessionId = $form->getFieldValue("S");
-  			$this->setMessage($form->getInfoMessage());
-  			return true;
-  		}
+          $form = $request->getForm();
+          $this->checkApiVersion($form);
   
-  		$this->setMessage($form->getErrorMessage());
-  		return false;
-  	}
+          $this->message = $form->getInfoMessage();
+  
+          if($form->isSuccessful() && $form->existsField("S")) {
+              $this->sessionId = $form->getFieldValue("S");
+              $this->setMessage($form->getInfoMessage());
+              return true;
+          }
+  
+          $this->setMessage($form->getErrorMessage());
+          return false;
+      }
   
       /**
        * Get version of installed application
@@ -3474,7 +3774,7 @@ if (!class_exists('Gpf_Api_Session', false)) {
        * @return string version of installed application
        */
       public function getAppVersion() {
-          $request = new Gpf_Rpc_FormRequest("Gpf_Api_AuthService", "getAppVersion");
+          $request = new Gpf_Rpc_FormRequest($this->getAuthenticateClassName(), "getAppVersion", $this);
           $request->setUrl($this->url);
   
           try {
@@ -3529,12 +3829,15 @@ if (!class_exists('Gpf_Api_Session', false)) {
   	    return $url . '&S=' . $this->getSessionId();
   	}
   
+  	protected function getAuthenticateClassName() {
+  	    return self::AUTHENTICATE_CLASS_NAME;
+  	}
+  
   	/**
   	 * Check API version
   	 * (has to be protected because of Drupal integration)
   	 *
-  	 * @param $latestVersion
-  	 * @throws Gpf_Api_IncompatibleVersionException
+  	 * @param Gpf_Rpc_Form $form
   	 */
   	protected function checkApiVersion(Gpf_Rpc_Form $form) {
   		if ($form->getFieldValue('correspondsApi') === Gpf::NO) {
@@ -3547,10 +3850,7 @@ if (!class_exists('Gpf_Api_Session', false)) {
   	 * @return String
   	 */
   	public static function getAPIVersion($fileName = __FILE__) {
-  		$fileHandler = fopen($fileName, 'r');
-  		fseek($fileHandler, -6 -32, SEEK_END);
-  		$hash = fgets($fileHandler);
-  		return substr($hash, 0, -1);
+          return PAP_VERSION;
   	}
   }
 
@@ -3594,6 +3894,11 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
       const SERVICES_JSON_SUPPRESS_ERRORS = 32;
   
       /**
+       * @var Gpf_Rpc_Json
+       */
+      private static $instance;
+  
+      /**
        * constructs a new JSON instance
        *
        * @param    int     $use    object behavior flags; combine with boolean-OR
@@ -3613,6 +3918,8 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
       {
           $this->use = $use;
       }
+  
+  
   
       /**
        * convert a string from one UTF-16 char to one UTF-8 char
@@ -3717,9 +4024,9 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
        * @return   mixed   JSON string representation of input var or an error if a problem occurs
        * @access   public
        */
-      public function encode($var) {
+      public function encode($var, $options = null) {
           if ($this->isJsonEncodeEnabled()) {
-              return @json_encode($var);
+              return @json_encode($var, $options);
           }
           switch (gettype($var)) {
               case 'boolean':
@@ -3769,7 +4076,11 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
                           case $ord_var_c == 0x2F:
                           case $ord_var_c == 0x5C:
                               // double quote, slash, slosh
-                              $ascii .= '\\'.$var{$c};
+                              if ($options == JSON_UNESCAPED_SLASHES && $ord_var_c == 0x2F) {
+                                  $ascii .= $var{$c};
+                              } else {
+                                  $ascii .= '\\'.$var{$c};
+                              }
                               break;
   
                           case (($ord_var_c >= 0x20) && ($ord_var_c <= 0x7F)):
@@ -3861,7 +4172,11 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
   
                               // treat as a JSON object
                               if (is_array($var) && count($var) && (array_keys($var) !== range(0, sizeof($var) - 1))) {
-                                  $properties = array_map(array($this, 'name_value'), array_keys($var), array_values($var));
+                                  $optionsArray = array();
+                                  for ($i = 0; $i < count($var); $i++) {
+                                      $optionsArray[] = $options;
+                                  }
+                                  $properties = array_map(array($this, 'name_value'), array_keys($var), array_values($var), $optionsArray);
   
                                   foreach($properties as $property) {
                                       if(Gpf_Rpc_Json::isError($property)) {
@@ -3872,8 +4187,13 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
                                   return '{' . join(',', $properties) . '}';
                               }
   
+                              $optionsArray = array();
+                              for ($i = 0; $i < count($var); $i++) {
+                                  $optionsArray[] = $options;
+                              }
+  
                               // treat it like a regular array
-                              $elements = array_map(array($this, 'encode'), $var);
+                              $elements = array_map(array($this, 'encode'), $var, $optionsArray);
   
                               foreach($elements as $element) {
                                   if(Gpf_Rpc_Json::isError($element)) {
@@ -3885,10 +4205,14 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
   
                           case 'object':
                               $vars = get_object_vars($var);
-  
+                              $optionsArray = array();
+                              for ($i = 0; $i < count($vars); $i++) {
+                                  $optionsArray[] = $options;
+                              }
                               $properties = array_map(array($this, 'name_value'),
                               array_keys($vars),
-                              array_values($vars));
+                              array_values($vars),
+                              $optionsArray);
   
                               foreach($properties as $property) {
                                   if(Gpf_Rpc_Json::isError($property)) {
@@ -3915,15 +4239,15 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
        * @return   string  JSON-formatted name-value pair, like '"name":value'
        * @access   private
        */
-      function name_value($name, $value)
+      function name_value($name, $value, $options = null)
       {
-          $encoded_value = $this->encode($value);
+          $encoded_value = $this->encode($value, $options);
   
           if(Gpf_Rpc_Json::isError($encoded_value)) {
               return $encoded_value;
           }
   
-          return $this->encode(strval($name)) . ':' . $encoded_value;
+          return $this->encode(strval($name), $options) . ':' . $encoded_value;
       }
   
       /**
@@ -3965,12 +4289,16 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
        *                   in ASCII or UTF-8 format!
        * @access   public
        */
-      function decode($str)
-      {
-          if ($this->isJsonDecodeEnabled()) {
-              return json_decode($str);
-          }
   
+      public function decode($str, $assoc = false) {
+          if ($this->isJsonDecodeEnabled()) {
+              $errorHandler = new Gpf_Rpc_PhpErrorHandler();
+              $response = $errorHandler->callMethod('json_decode', array($str, $assoc));
+              return $response;
+          }
+          if ($assoc) {
+              $this->use = self::SERVICES_JSON_LOOSE_TYPE;
+          }
           $str = $this->reduce_string($str);
   
           switch (strtolower($str)) {
@@ -4246,15 +4574,15 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
                   }
           }
       }
-      
+  
       protected function isJsonEncodeEnabled() {
           return Gpf_Php::isFunctionEnabled('json_encode');
       }
-      
+  
       protected function isJsonDecodeEnabled() {
           return Gpf_Php::isFunctionEnabled('json_decode');
       }
-      
+  
   
       /**
        * @todo Ultimately, this should just call PEAR::isError()
@@ -4267,11 +4595,26 @@ if (!class_exists('Gpf_Rpc_Json', false)) {
           }
           return false;
       }
+  
+      public static function encodeStatic($var, $options = null) {
+          return self::getInstance()->encode($var, $options);
+      }
+  
+      public static function decodeStatic($var, $assoc = false) {
+          return self::getInstance()->decode($var, $assoc);
+      }
+  
+      private static function getInstance() {
+          if (self::$instance === null) {
+              self::$instance = new self;
+          }
+          return self::$instance;
+      }
   }
   
   class Gpf_Rpc_Json_Error {
       private $message;
-      
+  
       public function __construct($message) {
           $this->message = $message;
       }
@@ -4333,6 +4676,10 @@ if (!class_exists('Pap_Api_Object', false)) {
       const FIELD_VALUE = "value";
       const FIELD_ERROR = "error";
       const FIELD_VALUES = "values";
+      const FIELD_OPERATOR = 'operator';
+      
+      const OPERATOR_EQUALS = '=';
+      const OPERATOR_LIKE = 'L';
   
       /**
        * @var Gpf_Data_IndexedRecordSet
@@ -4347,14 +4694,16 @@ if (!class_exists('Pap_Api_Object', false)) {
           $header->add(self::FIELD_NAME);
           $header->add(self::FIELD_VALUE);
           $header->add(self::FIELD_VALUES);
+          $header->add(self::FIELD_OPERATOR);
           $header->add(self::FIELD_ERROR);
   
           $this->fields->setHeader($header);
       }
   
-      public function setField($name, $value) {
+      public function setField($name, $value, $operator = self::OPERATOR_EQUALS) {
           $record = $this->fields->createRecord($name);
           $record->set(self::FIELD_VALUE, $value);
+          $record->set(self::FIELD_OPERATOR, $operator);
   
           $this->fields->add($record);
       }
@@ -4364,14 +4713,14 @@ if (!class_exists('Pap_Api_Object', false)) {
          	    $record = $this->fields->getRecord($name);
          	    return $record->get(self::FIELD_VALUE);
          	} catch(Exception $e) {
-         	    return '';
+         	    return null;
          	}
       }
   
       public function addErrorMessages(Gpf_Data_IndexedRecordSet $fields) {
           foreach($fields as $field) {
               if($field->get(self::FIELD_ERROR) != '') {
-                  $this->message .= $field->get(self::FIELD_NAME).' - '.$field->get(self::FIELD_ERROR).'<br>';
+                  $this->message .= '<br>'.$field->get(self::FIELD_NAME).' - '.$field->get(self::FIELD_ERROR);
               }
           }
       }
@@ -4405,7 +4754,7 @@ if (!class_exists('Pap_Api_Object', false)) {
       protected function fillFieldsToGridRequest($request) {
           foreach($this->fields as $field) {
               if($field->get(self::FIELD_VALUE) != '') {
-                  $request->addFilter($field->get(self::FIELD_NAME), "L", $field->get(self::FIELD_VALUE));
+                  $request->addFilter($field->get(self::FIELD_NAME), $field->get(self::FIELD_OPERATOR), $field->get(self::FIELD_VALUE));
               }
           }
       }
@@ -4425,7 +4774,7 @@ if (!class_exists('Pap_Api_Object', false)) {
               throw new Exception("No rows found!");
           }
           if($grid->getTotalCount() > 1) {
-              throw new Exception("Too may rows found!");
+              throw new Exception("Too many rows found!");
           }
           $recordset = $grid->getRecordset();
   
@@ -4467,7 +4816,7 @@ if (!class_exists('Pap_Api_Object', false)) {
           $request = new Gpf_Rpc_FormRequest($this->class, $method, $this->session);
           $this->beforeCallRequest($request);
           foreach($this->getFields() as $field) {
-              if($field->get(self::FIELD_VALUE) != null) {
+              if($field->get(self::FIELD_VALUE) !== null) {
                   $request->setField($field->get(self::FIELD_NAME), $field->get(self::FIELD_VALUE));
               }
           }
@@ -4534,6 +4883,9 @@ if (!class_exists('Pap_Api_Object', false)) {
   
           return $this->callRequest("add");
       }
+      
+      protected function fillEmptyRecord() {
+      }
   
       protected function beforeCallRequest(Gpf_Rpc_FormRequest $request) {
       }
@@ -4543,19 +4895,34 @@ if (!class_exists('Pap_Api_Object', false)) {
 
 if (!class_exists('Pap_Api_AffiliatesGrid', false)) {
   class Pap_Api_AffiliatesGrid extends Gpf_Rpc_GridRequest {
-  	
+  
   	private $dataValues = null;
-  	
+  
       public function __construct(Gpf_Api_Session $session) {
           if($session->getRoleType() == Gpf_Api_Session::AFFILIATE) {
       		throw new Exception("This class can be used only by merchant!");
       	} else {
-      		parent::__construct("Pap_Merchants_User_AffiliatesGrid", "getRows", $session);
+      		parent::__construct("Pap_Merchants_User_TopAffiliatesGrid", "getRows", $session);
       	}
       }
   }
 
 } //end Pap_Api_AffiliatesGrid
+
+if (!class_exists('Pap_Api_AffiliatesGridSimple', false)) {
+  class Pap_Api_AffiliatesGridSimple extends Gpf_Rpc_GridRequest {
+      private $dataValues = null;
+  
+      public function __construct(Gpf_Api_Session $session) {
+          if ($session->getRoleType() == Gpf_Api_Session::AFFILIATE) {
+              throw new Exception('This class can be used only by merchant!');
+          } else {
+              parent::__construct('Pap_Merchants_User_AffiliatesGridSimple', 'getRows', $session);
+          }
+      }
+  }
+
+} //end Pap_Api_AffiliatesGridSimple
 
 if (!class_exists('Pap_Api_BannersGrid', false)) {
   class Pap_Api_BannersGrid extends Gpf_Rpc_GridRequest {
@@ -4574,32 +4941,32 @@ if (!class_exists('Pap_Api_BannersGrid', false)) {
 if (!class_exists('Pap_Api_Affiliate', false)) {
   class Pap_Api_Affiliate extends Pap_Api_Object {
   
-      const OPERATOR_EQUALS = '=';
-      const OPERATOR_LIKE = 'L';
-  
       private $dataValues = null;
-      private $equalsFields = array();
+  
+      const CLASS_NAME_AFFILIATE = 'Pap_Affiliates_Profile_PersonalDetailsForm';
+      const CLASS_NAME_MERCHANT = 'Pap_Merchants_User_AffiliateForm';
   
       public function __construct(Gpf_Api_Session $session) {
-          if($session->getRoleType() == Gpf_Api_Session::AFFILIATE) {
-              $this->class = "Pap_Affiliates_Profile_PersonalDetailsForm";
-          } else {
-              $this->class = "Pap_Signup_AffiliateForm";
-          }
-           
           parent::__construct($session);
-  
-          $this->addEqualField('username');
-           
-          $this->getDataFields();
+          $this->initClass($session);
       }
   
-      private function addEqualField($name) {
-          $this->equalsFields[] = $name;
+      protected function initClass(Gpf_Api_Session $session) {
+          if($session->getRoleType() == Gpf_Api_Session::AFFILIATE) {
+              $this->class = self::CLASS_NAME_AFFILIATE;
+          } else {
+              $this->class = self::CLASS_NAME_MERCHANT;
+          }
       }
   
-      private function getEqualFields() {
-          return $this->equalsFields;
+      private function initDataFields() {
+          if ($this->dataValues === null) {
+              $this->getDataFields();
+          }
+      }
+  
+      protected function getPrimaryKey() {
+          return 'id';
       }
   
       public function getUserid() { return $this->getField("userid"); }
@@ -4610,11 +4977,8 @@ if (!class_exists('Pap_Api_Affiliate', false)) {
   
       public function getRefid() { return $this->getField("refid"); }
   
-      public function setRefid($value, $operator = self::OPERATOR_LIKE) { 
-          $this->setField('refid', $value);
-          if ($operator == self::OPERATOR_EQUALS) {
-              $this->addEqualField('refid');
-          }
+      public function setRefid($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField('refid', $value, $operator);
       }
   
       public function getStatus() { return $this->getField("rstatus"); }
@@ -4632,13 +4996,12 @@ if (!class_exists('Pap_Api_Affiliate', false)) {
       public function getPhoto() { return $this->getField("photo"); }
       public function setPhoto($value) { $this->setField("photo", $value); }
   
+      public function getAuthToken() { return $this->getField('authtoken'); }
+  
       public function getUsername() { return $this->getField("username"); }
   
-      public function setUsername($value, $operator = self::OPERATOR_LIKE) {
-          $this->setField('username', $value);
-          if ($operator == self::OPERATOR_EQUALS) {
-              $this->addEqualField('username');
-          }
+      public function setUsername($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField('username', $value, $operator);
       }
   
       public function getPassword() { return $this->getField("rpassword"); }
@@ -4646,24 +5009,21 @@ if (!class_exists('Pap_Api_Affiliate', false)) {
   
       public function getFirstname() { return $this->getField("firstname"); }
   
-      public function setFirstname($value, $operator = self::OPERATOR_LIKE) {
-          $this->setField('firstname', $value);
-          if ($operator == self::OPERATOR_EQUALS) {
-              $this->addEqualField('firstname');
-          }
+      public function setFirstname($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField('firstname', $value, $operator);
       }
   
       public function getLastname() { return $this->getField("lastname"); }
   
-      public function setLastname($value, $operator = self::OPERATOR_LIKE) {
-          $this->setField('lastname', $value);
-          if ($operator == self::OPERATOR_EQUALS) {
-              $this->addEqualField('lastname');
-          }
+      public function setLastname($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField('lastname', $value, $operator);
       }
   
       public function getParentUserId() { return $this->getField("parentuserid"); }
       public function setParentUserId($value) { $this->setField("parentuserid", $value); }
+  
+      public function getVisitorId() { return $this->getField("visitorId"); }
+      public function setVisitorId($value) { $this->setField("visitorId", $value); }
   
       public function getIp() { return $this->getField("ip"); }
       public function setIp($value) { $this->setField("ip", $value); }
@@ -4671,18 +5031,19 @@ if (!class_exists('Pap_Api_Affiliate', false)) {
       public function getNotificationEmail() { return $this->getField("notificationemail"); }
       public function setNotificationEmail($value) { $this->setField("notificationemail", $value); }
   
-      public function enableCreateSignupReferralCommissions() { $this->setField("createSignupReferralComm", Gpf::YES); }
+      public function getLanguage() { return $this->getField('lang'); }
+      public function setLanguage($value) { $this->setField('lang', $value); }
+  
+      public function disableSignupBonus() { $this->setField('createSignupComm', Gpf::NO); }
+      public function disableReferralCommissions() { $this->setField('createReferralComm', Gpf::NO); }
   
       public function getData($index) {
           $this->checkIndex($index);
           return $this->getField("data$index");
       }
-      public function setData($index, $value, $operator = self::OPERATOR_LIKE) {
+      public function setData($index, $value, $operator = self::OPERATOR_EQUALS) {
           $this->checkIndex($index);
-          $this->setField("data$index", $value);
-          if ($operator == self::OPERATOR_EQUALS) {
-              $this->addEqualField('data' . $index);
-          }
+          $this->setField("data$index", $value, $operator);
       }
   
       public function setPayoutOptionField($code, $value) {
@@ -4692,26 +5053,69 @@ if (!class_exists('Pap_Api_Affiliate', false)) {
       public function getDataName($index) {
           $this->checkIndex($index);
           $dataField = "data$index";
-           
+  
+          $this->initDataFields();
+  
           if(!is_array($this->dataValues) || !isset($this->dataValues[$dataField])) {
               return '';
           }
-           
+  
           return $this->dataValues[$dataField]['name'];
       }
   
       public function getDataStatus($index) {
           $this->checkIndex($index);
           $dataField = "data$index";
-           
+  
+          $this->initDataFields();
+  
           if(!is_array($this->dataValues) || !isset($this->dataValues[$dataField])) {
               return 'U';
           }
-           
+  
           return $this->dataValues[$dataField]['status'];
       }
   
+      private function checkIndex($index) {
+          if(!is_numeric($index) || $index > 25 || $index < 1) {
+              throw new Exception("Incorrect index '$index', it must be between 1 and 25");
+          }
+  
+          return true;
+      }
+  
+      protected function fillEmptyRecord() {
+          $this->setField("userid", "");
+          $this->setField("agreeWithTerms", Gpf::YES);
+      }
+  
+      /**
+       * retrieves names and states of data1..data25 fields
+       *
+       */
+      protected function getDataFields() {
+          $request = new Gpf_Rpc_RecordsetRequest('Gpf_Db_Table_FormFields', 'getFields', $this->getSession());
+          $request->addParam('formId', 'affiliateForm');
+          $request->addParam('status', $this->getDataFieldStatuses());
+  
+          try {
+              $request->sendNow();
+          } catch(Exception $e) {
+              throw new Exception('Cannot load datafields. Error: '.$e->getMessage());
+          }
+  
+          $recordset = $request->getRecordSet();
+          $this->dataValues = array();
+          foreach($recordset as $record) {
+              $this->dataValues[$record->get('code')]['name'] = $record->get("name");
+              $this->dataValues[$record->get('code')]['status'] = $record->get("status");
+          }
+      }
+  
       public function sendConfirmationEmail() {
+          if($this->getSession()->getRoleType() == Gpf_Api_Session::AFFILIATE) {
+              throw new Exception('Insufficient privileges');
+          }
           $params = new Gpf_Rpc_Params();
           $params->add('ids', array($this->getUserid()));
           return $this->sendActionRequest('Pap_Merchants_User_AffiliateForm', 'sendSignupConfirmation', $params);
@@ -4722,6 +5126,9 @@ if (!class_exists('Pap_Api_Affiliate', false)) {
        * @param $sendNotification
        */
       public function assignToPrivateCampaign($campaignID, $sendNotification = false) {
+          if($this->getSession()->getRoleType() == Gpf_Api_Session::AFFILIATE) {
+              throw new Exception('Insufficient privileges');
+          }
           $params = new Gpf_Rpc_Params();
           $params->add('campaignId', $campaignID);
           $params->add('sendNotification', ($sendNotification ? Gpf::YES : Gpf::NO));
@@ -4729,74 +5136,77 @@ if (!class_exists('Pap_Api_Affiliate', false)) {
           return $this->sendActionRequest('Pap_Db_UserInCommissionGroup', 'addUsers', $params);
       }
   
-      private function checkIndex($index) {
-          if(!is_numeric($index) || $index > 25 || $index < 1) {
-              throw new Exception("Incorrect index '$index', it must be between 1 and 25");
-          }
-           
-          return true;
-      }
-  
-      protected function fillEmptyRecord() {
-          $this->setField("userid", "");
-          $this->setField("agreeWithTerms", Gpf::YES);
-      }
-  
-      protected function getPrimaryKey() {
-          return "userid";
-      }
-  
       protected function getGridRequest() {
-          return new Pap_Api_AffiliatesGrid($this->getSession());
+          return new Pap_Api_AffiliatesGridSimple($this->getSession());
       }
   
-      protected function fillFieldsToGridRequest($request) {
-          foreach(parent::getFields() as $field) {
-              if($field->get(self::FIELD_VALUE) != '') {
-                  $operator = self::OPERATOR_LIKE;
-                  if (in_array($field->get(self::FIELD_NAME), $this->getEqualFields())) {
-                      $operator = self::OPERATOR_EQUALS;
-                  }
-                  $request->addFilter($field->get(self::FIELD_NAME), $operator, $field->get(self::FIELD_VALUE));
-              }
-          }
-      }
-  
-      /**
-       * retrieves names and states of data1..data25 fields
-       *
-       */
-      protected function getDataFields() {
-          $request = new Gpf_Rpc_RecordsetRequest("Gpf_Db_Table_FormFields", "getFields", $this->getSession());
-          $request->addParam("formId","affiliateForm");
-          $request->addParam("status","M,O");
-           
-          try {
-              $request->sendNow();
-          } catch(Exception $e) {
-              throw new Exception("Cannot load datafields. Error: ".$e->getMessage());
-          }
-           
-          $recordset = $request->getRecordSet();
-          $this->dataValues = array();
-          foreach($recordset as $record) {
-              $this->dataValues[$record->get("code")]['name'] = $record->get("name");
-              $this->dataValues[$record->get("code")]['status'] = $record->get("status");
-          }
+      protected function getDataFieldStatuses() {
+          return 'M,O,P,R,S,W';
       }
   
       private function sendActionRequest($className, $method, Gpf_Rpc_Params $params) {
           $request = new Gpf_Rpc_ActionRequest($className, $method, $this->getSession());
           $request->setParams($params);
-          return $request->sendNow();
+          $request->sendNow();
+          return $request->getResponseObject()->toObject();
       }
   
       protected function beforeCallRequest(Gpf_Rpc_FormRequest $request) {
           $request->addParam('isFromApi', Gpf::YES);
       }
+  
+      public function add() {
+          if ($this->class == self::CLASS_NAME_AFFILIATE) {
+              throw new Gpf_Exception('Not implemented');
+          }
+          return parent::add();
+      }
   }
 
 } //end Pap_Api_Affiliate
+
+if (!class_exists('Pap_Api_AffiliateSignup', false)) {
+  class Pap_Api_AffiliateSignup extends Pap_Api_Affiliate {
+  
+      public function __construct(Gpf_Api_Session $session) {
+          parent::__construct($session);
+      }
+  
+      protected function initClass(Gpf_Api_Session $session) {
+          $this->class = 'Pap_Signup_AffiliateForm';
+      }
+  
+      protected function getDataFieldStatuses() {
+          return 'M,O,S,W';
+      }
+  
+      public function sendConfirmationEmail() {
+          throw new Gpf_Exception('Not implemented');
+      }
+  
+      public function assignToPrivateCampaign($campaignID, $sendNotification = false) {
+          throw new Gpf_Exception('Not implemented');
+      }
+  
+      protected function getGridRequest() {
+          throw new Gpf_Exception('Not implemented');
+      }
+  
+      public function save() {
+          throw new Gpf_Exception('Not implemented');
+      }
+  
+      public function load() {
+          throw new Gpf_Exception('Not implemented');
+      }
+  
+      protected function beforeCallRequest(Gpf_Rpc_FormRequest $request) {
+          parent::beforeCallRequest($request);
+          $request->addParam('initSession', Gpf::YES);
+      }
+  }
+
+} //end Pap_Api_AffiliateSignup
 
 if (!class_exists('Pap_Api_TransactionsGrid', false)) {
   class Pap_Api_TransactionsGrid extends Gpf_Rpc_GridRequest {
@@ -4851,6 +5261,8 @@ if (!class_exists('Pap_Api_TransactionsGrid', false)) {
 if (!class_exists('Pap_Api_Transaction', false)) {
   class Pap_Api_Transaction extends Pap_Api_Object {
   
+      const TRACKING_METHOD_MANUAL_COMMISSION = 'M';
+  
       private $dataValues = null;
   
       public function __construct(Gpf_Api_Session $session) {
@@ -4859,7 +5271,7 @@ if (!class_exists('Pap_Api_Transaction', false)) {
           } else {
               $this->class = "Pap_Merchants_Transaction_TransactionsForm";
           }
-           
+  
           parent::__construct($session);
       }
   
@@ -4894,34 +5306,50 @@ if (!class_exists('Pap_Api_Transaction', false)) {
       public function setCountryCode($value) { $this->setField("countrycode", $value); }
   
       public function getDateInserted() { return $this->getField("dateinserted"); }
-      public function setDateInserted($value) { $this->setField("dateinserted", $value); }
+      public function setDateInserted($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("dateinserted", $value, $operator);
+      }
   
       public function getDateApproved() { return $this->getField("dateapproved"); }
-      public function setDateApproved($value) { $this->setField("dateapproved", $value); }
+      public function setDateApproved($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("dateapproved", $value, $operator);
+      }
   
       public function getPayoutStatus() { return $this->getField("payoutstatus"); }
       public function setPayoutStatus($value) { $this->setField("payoutstatus", $value); }
   
       public function getPayoutHistoryId() { return $this->getField("payouthistoryid"); }
-      public function setPayoutHistoryId($value) { $this->setField("payouthistoryid", $value); }
+      public function setPayoutHistoryId($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("payouthistoryid", $value, $operator);
+      }
   
       public function getRefererUrl() { return $this->getField("refererurl"); }
-      public function setRefererUrl($value) { $this->setField("refererurl", $value); }
+      public function setRefererUrl($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("refererurl", $value, $operator);
+      }
   
       public function getIp() { return $this->getField("ip"); }
-      public function setIp($value) { $this->setField("ip", $value); }
+      public function setIp($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("ip", $value, $operator);
+      }
   
       public function getBrowser() { return $this->getField("browser"); }
-      public function setBrowser($value) { $this->setField("browser", $value); }
+      public function setBrowser($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("browser", $value, $operator);
+      }
   
       public function getCommission() { return $this->getField("commission"); }
       public function setCommission($value) { $this->setField("commission", $value); }
   
       public function getOrderId() { return $this->getField("orderid"); }
-      public function setOrderId($value) { $this->setField("orderid", $value); }
+      public function setOrderId($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("orderid", $value, $operator);
+      }
   
       public function getProductId() { return $this->getField("productid"); }
-      public function setProductId($value) { $this->setField("productid", $value); }
+      public function setProductId($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("productid", $value, $operator);
+      }
   
       public function getTotalCost() { return $this->getField("totalcost"); }
       public function setTotalCost($value) { $this->setField("totalcost", $value); }
@@ -4930,37 +5358,57 @@ if (!class_exists('Pap_Api_Transaction', false)) {
       public function setRecurringCommid($value) { $this->setField("recurringcommid", $value); }
   
       public function getFirstClickTime() { return $this->getField("firstclicktime"); }
-      public function setFirstClickTime($value) { $this->setField("firstclicktime", $value); }
+      public function setFirstClickTime($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("firstclicktime", $value, $operator);
+      }
   
       public function getFirstClickReferer() { return $this->getField("firstclickreferer"); }
-      public function setFirstClickReferer($value) { $this->setField("firstclickreferer", $value); }
+      public function setFirstClickReferer($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("firstclickreferer", $value, $operator);
+      }
   
       public function getFirstClickIp() { return $this->getField("firstclickip"); }
-      public function setFirstClickIp($value) { $this->setField("firstclickip", $value); }
+      public function setFirstClickIp($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("firstclickip", $value, $operator);
+      }
   
       public function getFirstClickData1() { return $this->getField("firstclickdata1"); }
-      public function setFirstClickData1($value) { $this->setField("firstclickdata1", $value); }
+      public function setFirstClickData1($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("firstclickdata1", $value, $operator);
+      }
   
       public function getFirstClickData2() { return $this->getField("firstclickdata2"); }
-      public function setFirstClickData2($value) { $this->setField("firstclickdata2", $value); }
+      public function setFirstClickData2($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("firstclickdata2", $value, $operator);
+      }
   
       public function getClickCount() { return $this->getField("clickcount"); }
       public function setClickCount($value) { $this->setField("clickcount", $value); }
   
       public function getLastClickTime() { return $this->getField("lastclicktime"); }
-      public function setLastClickTime($value) { $this->setField("lastclicktime", $value); }
+      public function setLastClickTime($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("lastclicktime", $value, $operator);
+      }
   
       public function getLastClickReferer() { return $this->getField("lastclickreferer"); }
-      public function setLastClickReferer($value) { $this->setField("lastclickreferer", $value); }
+      public function setLastClickReferer($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("lastclickreferer", $value, $operator);
+      }
   
       public function getLastClickIp() { return $this->getField("lastclickip"); }
-      public function setLastClickIp($value) { $this->setField("lastclickip", $value); }
+      public function setLastClickIp($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("lastclickip", $value, $operator);
+      }
   
       public function getLastClickData1() { return $this->getField("lastclickdata1"); }
-      public function setLastClickData1($value) { $this->setField("lastclickdata1", $value); }
+      public function setLastClickData1($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("lastclickdata1", $value, $operator);
+      }
   
       public function getLastClickData2() { return $this->getField("lastclickdata2"); }
-      public function setLastClickData2($value) { $this->setField("lastclickdata2", $value); }
+      public function setLastClickData2($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("lastclickdata2", $value, $operator);
+      }
   
       public function getTrackMethod() { return $this->getField("trackmethod"); }
       public function setTrackMethod($value) { $this->setField("trackmethod", $value); }
@@ -4977,6 +5425,9 @@ if (!class_exists('Pap_Api_Transaction', false)) {
       public function getTier() { return $this->getField("tier"); }
       public function setTier($value) { $this->setField("tier", $value); }
   
+      public function getSplit() { return $this->getField("split"); }
+      public function setSplit($value) { $this->setField("split", $value); }
+  
       public function getChannel() { return $this->getField("channel"); }
       public function setChannel($value) { $this->setField("channel", $value); }
   
@@ -4984,10 +5435,14 @@ if (!class_exists('Pap_Api_Transaction', false)) {
       public function setCommTypeId($value) { $this->setField("commtypeid", $value); }
   
       public function getMerchantNote() { return $this->getField("merchantnote"); }
-      public function setMerchantNote($value) { $this->setField("merchantnote", $value); }
+      public function setMerchantNote($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("merchantnote", $value, $operator);
+      }
   
       public function getSystemNote() { return $this->getField("systemnote"); }
-      public function setSystemNote($value) { $this->setField("systemnote", $value); }
+      public function setSystemNote($value, $operator = self::OPERATOR_EQUALS) {
+          $this->setField("systemnote", $value, $operator);
+      }
   
       public function getParentTransactionId() { return $this->getField("parenttransid"); }
       public function setParentTransactionId($value) { $this->setField("parenttransid", $value); }
@@ -4996,9 +5451,9 @@ if (!class_exists('Pap_Api_Transaction', false)) {
           $this->checkIndex($index);
           return $this->getField("data$index");
       }
-      public function setData($index, $value) {
+      public function setData($index, $value, $operator = self::OPERATOR_EQUALS) {
           $this->checkIndex($index);
-          $this->setField("data$index", $value);
+          $this->setField("data$index", $value, $operator);
       }
   
       /**
@@ -5020,6 +5475,24 @@ if (!class_exists('Pap_Api_Transaction', false)) {
       }
   
       /**
+       * @param $note optional note that will be added to the refund/chargeback transaction
+       * @param $fee that will be added to the refund/chargeback transaction
+       * @return Gpf_Rpc_Action
+       */
+      public function chargeBackByOrderId($note = '', $fee = 0) {
+          return $this->makeRefundChargeBackByOrderId($note, 'H', $fee);
+      }
+  
+      /**
+       * @param $note optional note that will be added to the refund/chargeback transaction
+       * @param $fee that will be added to the refund/chargeback transaction
+       * @return Gpf_Rpc_Action
+       */
+      public function refundByOrderId($note = '', $fee = 0) {
+          return $this->makeRefundChargeBackByOrderId($note, 'R', $fee);
+      }
+  
+      /**
        * @return Gpf_Rpc_Action
        */
       private function makeRefundChargeBack($note, $type, $fee, $refundMultiTier) {
@@ -5036,27 +5509,79 @@ if (!class_exists('Pap_Api_Transaction', false)) {
           return $request->getAction();
       }
   
+      /**
+       * @return Gpf_Rpc_Action
+       */
+      private function makeRefundChargeBackByOrderId($note, $type, $fee) {
+          if ($this->getOrderId() == '') {
+              throw new Gpf_Exception("Order Id is empty. Call setOrderId() or load transaction before calling refund/chargeback");
+          }
+          $request = new Gpf_Rpc_ActionRequest($this->class, 'makeRefundChargebackByParams', $this->getSession());
+          $request->addParam('merchant_note', $note);
+          $request->addParam('status', $type);
+          $request->addParam('filters', new Gpf_Rpc_Array(array(array('orderid', Gpf_Data_Filter::EQUALS, $this->getOrderId()))));
+          $request->addParam('fee', $fee);
+          $request->sendNow();
+          return $request->getAction();
+      }
+  
+      /**
+       * @param $orderid order ID of transaction which will be approved
+       * @param $note optional note that will be added to the transaction
+       * @return Gpf_Rpc_Action
+       */
+      public function approveByOrderId($note = '') {
+          return $this->changeStatusPerOrderId($note, 'A');
+      }
+  
+      /**
+       * @param $orderid order ID of transaction which will be declined
+       * @param $note optional note that will be added to the transaction
+       * @return Gpf_Rpc_Action
+       */
+      public function declineByOrderId($note = '') {
+          return $this->changeStatusPerOrderId($note, 'D');
+      }
+  
+      /**
+       * @return Gpf_Rpc_Action
+       */
+      private function changeStatusPerOrderId($note, $type) {
+          if ($this->getOrderId() == '') {
+              throw new Gpf_Exception('Order ID cannot be empty!');
+          }
+          $request = new Gpf_Rpc_ActionRequest($this->class, 'changeStatusPerOrderId', $this->getSession());
+          $request->addParam('merchant_note', $note);
+          $request->addParam('status', $type);
+          $request->addParam('orderid', $this->getOrderId());
+          $request->sendNow();
+          return $request->getAction();
+      }
+  
   
       private function checkIndex($index) {
           if(!is_numeric($index) || $index > 5 || $index < 1) {
               throw new Exception("Incorrect index '$index', it must be between 1 and 5");
           }
-           
+  
           return true;
       }
   
       protected function fillEmptyRecord() {
-          $this->setTransid("");
+          $this->setTransid('');
           if($this->getType() == '') {
-              $this->setType("A");
+              $this->setType('S');
           }
           if($this->getMultiTierCreation() == '') {
               $this->setMultiTierCreation('N');
           }
+          if($this->getTrackMethod() == '') {
+              $this->setTrackMethod(self::TRACKING_METHOD_MANUAL_COMMISSION);
+          }
       }
   
       protected function getPrimaryKey() {
-          return "transid";
+          return "id";
       }
   
       protected function getGridRequest() {
@@ -5068,26 +5593,28 @@ if (!class_exists('Pap_Api_Transaction', false)) {
 
 if (!class_exists('Pap_Tracking_Action_RequestActionObject', false)) {
   class Pap_Tracking_Action_RequestActionObject extends Gpf_Rpc_JsonObject {
-      public $ac = ''; // actionCode
-      public $t  = ''; // totalCost
-      public $f  = ''; // fixedCost
-      public $o  = ''; // order ID
-      public $p  = ''; // product ID
-      public $d1 = ''; // data1
-      public $d2 = ''; // data2
-      public $d3 = ''; // data3
-      public $d4 = ''; // data4
-      public $d5 = ''; // data5
-      public $a  = ''; // affiliate ID
-      public $c  = ''; // campaign ID
-      public $b  = ''; // banner ID
-      public $ch = ''; // channel ID
-      public $cc = ''; // custom commission
-      public $s  = ''; // status
-      public $cr = ''; // currency
-      public $cp = ''; // coupon code
-      public $ts = ''; // time stamp
-      
+      public $ac   = ''; // actionCode
+      public $t    = ''; // totalCost
+      public $f    = ''; // fixedCost
+      public $o    = ''; // order ID
+      public $p    = ''; // product ID
+      public $d1   = ''; // data1
+      public $d2   = ''; // data2
+      public $d3   = ''; // data3
+      public $d4   = ''; // data4
+      public $d5   = ''; // data5
+      public $a    = ''; // affiliate ID
+      public $c    = ''; // campaign ID
+      public $b    = ''; // banner ID
+      public $ch   = ''; // channel ID
+      public $cc   = ''; // custom commission
+      public $ccfc = ''; // load next tiers from campaign
+      public $s    = ''; // status
+      public $cr   = ''; // currency
+      public $cp   = ''; // coupon code
+      public $ts   = ''; // time stamp
+      public $dndc = ''; // do not delete cookies
+  
       public function __construct($object = null) {
           parent::__construct($object);
       }
@@ -5149,7 +5676,7 @@ if (!class_exists('Pap_Tracking_Action_RequestActionObject', false)) {
       public function getCampaignId() {
           return $this->c;
       }
-      
+  
       public function getBannerId() {
           return $this->b;
       }
@@ -5160,6 +5687,10 @@ if (!class_exists('Pap_Tracking_Action_RequestActionObject', false)) {
   
       public function getCustomCommission() {
           return $this->cc;
+      }
+  
+      public function getCustomCommissionNextTiersFromCampaign() {
+          return $this->ccfc;
       }
   
       public function getStatus() {
@@ -5176,6 +5707,10 @@ if (!class_exists('Pap_Tracking_Action_RequestActionObject', false)) {
   
       public function getTimeStamp() {
           return $this->ts;
+      }
+  
+      public function isDoNotDeleteCookies() {
+          return $this->dndc == Gpf::YES;
       }
   
       public function setActionCode($value) {
@@ -5225,7 +5760,7 @@ if (!class_exists('Pap_Tracking_Action_RequestActionObject', false)) {
       public function setCampaignId($value) {
           $this->c = $value;
       }
-      
+  
       public function setBannerId($value) {
           $this->b = $value;
       }
@@ -5236,6 +5771,10 @@ if (!class_exists('Pap_Tracking_Action_RequestActionObject', false)) {
   
       public function setCustomCommission($value) {
           $this->cc = $value;
+      }
+  
+      public function setCustomCommissionNextTiersFromCampaign($value) {
+          $this->ccfc = $value;
       }
   
       public function setStatus($value) {
@@ -5252,6 +5791,10 @@ if (!class_exists('Pap_Tracking_Action_RequestActionObject', false)) {
   
       public function setTimeStamp($value) {
           $this->ts = $value;
+      }
+  
+      public function doNotDeleteCookies() {
+          $this->dndc = Gpf::YES;
       }
   
   }
@@ -5292,7 +5835,7 @@ if (!class_exists('Pap_Tracking_Request', false)) {
       protected $logger;
   
       function __construct() {
-          $this->request = $_REQUEST;
+          $this->request = array_change_key_case($_REQUEST, CASE_LOWER);
       }
   
       public function parseUrl($url) {
@@ -5300,16 +5843,15 @@ if (!class_exists('Pap_Tracking_Request', false)) {
           if ($url === null || $url == '') {
               return;
           }
-          $parsedUrl = @parse_url('?'.ltrim($url, '?'));
+          $url = rtrim($url, '&').'&';
+          $url = '?'.ltrim($url, '?');
+          $parsedUrl = parse_url($url);
           if ($parsedUrl === false || !array_key_exists('query', $parsedUrl)) {
               return;
           }
-          $args = explode('&', @$parsedUrl['query']);
-          foreach ($args as $arg) {
-              $parts = explode('=', $arg, 2);
-              if (count($parts) == 2) {
-                  $this->request[$parts[0]] = $parts[1];
-              }
+          parse_str($parsedUrl['query'], $args);
+          foreach ($args as $name => $value) {
+              $this->setRequestParameter($name, $value);
           }
       }
   
@@ -5355,7 +5897,7 @@ if (!class_exists('Pap_Tracking_Request', false)) {
   
       public function setRawExtraData($i, $value) {
           $extraDataParamName = $this->getExtraDataParamName($i);
-          $this->request[$extraDataParamName] = $value;
+          $this->setRequestParameter($extraDataParamName, $value);
       }
   
       /**
@@ -5370,11 +5912,7 @@ if (!class_exists('Pap_Tracking_Request', false)) {
               return $value;
           }
   
-          $paramName = $this->getClickData1ParamName();
-          if (!isset($this->request[$paramName])) {
-              return '';
-          }
-          return $this->request[$paramName];
+          return $this->getRequestParameter(self::getClickData1ParamName());
       }
   
       /**
@@ -5389,24 +5927,21 @@ if (!class_exists('Pap_Tracking_Request', false)) {
               return $value;
           }
   
-          $paramName = $this->getClickData2ParamName();
-          if (!isset($this->request[$paramName])) {
-              return '';
-          }
-          return $this->request[$paramName];
+          return $this->getRequestParameter(self::getClickData2ParamName());
       }
   
-      public function getClickData1ParamName() {
+      public static function getClickData1ParamName() {
           return Gpf_Settings::get(Pap_Settings::PARAM_NAME_EXTRA_DATA.'1');
       }
   
-      public function getClickData2ParamName() {
+      public static function getClickData2ParamName() {
           return Gpf_Settings::get(Pap_Settings::PARAM_NAME_EXTRA_DATA.'2');
       }
   
       public function getRefererUrl() {
-          if (isset($this->request[self::PARAM_REFERRERURL_NAME]) && $this->request[self::PARAM_REFERRERURL_NAME] != '') {
-              return self::decodeRefererUrl($this->request[self::PARAM_REFERRERURL_NAME]);
+          $referrerurlParam = $this->getRequestParameter(self::PARAM_REFERRERURL_NAME);
+          if ($referrerurlParam != '') {
+              return self::decodeRefererUrl($referrerurlParam);
           }
           if (isset($_SERVER['HTTP_REFERER'])) {
               return self::decodeRefererUrl($_SERVER['HTTP_REFERER']);
@@ -5431,15 +5966,9 @@ if (!class_exists('Pap_Tracking_Request', false)) {
           return $this->countryCode;
       }
   
-      public function getBrowser() {
-          if (!isset($_SERVER['HTTP_USER_AGENT'])) {
-              return '';
-          }
-          return substr(md5($_SERVER['HTTP_USER_AGENT']), 0, 6);
-      }
-  
       public function getLinkStyle() {
-          if (!isset($this->request[self::PARAM_LINK_STYLE]) || $this->request[self::PARAM_LINK_STYLE] != '1') {
+          $paramLinkStyle = $this->getRequestParameter(self::PARAM_LINK_STYLE);
+          if ($paramLinkStyle !== '1') {
               return Pap_Tracking_ClickTracker::LINKMETHOD_REDIRECT;
           }
           return Pap_Tracking_ClickTracker::LINKMETHOD_URLPARAMETERS;
@@ -5460,15 +5989,23 @@ if (!class_exists('Pap_Tracking_Request', false)) {
           }
       }
   
-      public function getRequestParameter($paramName) {
+      public function getRequestParameter($paramName, $returnString = true) {
+          $paramName = strtolower($paramName);
           if (!isset($this->request[$paramName])) {
               return '';
           }
-          return $this->request[$paramName];
+          if (!$returnString) {
+              return $this->request[$paramName];
+          }
+  
+          if (is_array($this->request[$paramName])) {
+              return '';
+          }
+          return Gpf_Common_String::convertToUtf8($this->request[$paramName]);
       }
   
       public function setRequestParameter($paramName, $value) {
-          $this->request[$paramName] = $value;
+          $this->request[strtolower($paramName)] = $value;
       }
   
       static public function getRotatorBannerParamName() {
@@ -5483,7 +6020,7 @@ if (!class_exists('Pap_Tracking_Request', false)) {
           return $this->getRequestParameter(self::getRotatorBannerParamName());
       }
   
-      public function getExtraDataParamName($i) {
+      static public function getExtraDataParamName($i) {
           return Gpf_Settings::get(Pap_Settings::PARAM_NAME_EXTRA_DATA).$i;
       }
   
@@ -5495,9 +6032,9 @@ if (!class_exists('Pap_Tracking_Request', false)) {
       }
   
       public function toString() {
-          $params = array();
+          $params = '';
           foreach($this->request as $key => $value) {
-              $params .= ($params != '' ? ", " : '')."$key=$value";
+              $params .= ($params != '' ? ", " : '').Gpf_Common_String::convertToUtf8($key).'='.Gpf_Common_String::convertToUtf8(print_r($value, true));
           }
           return $params;
       }
@@ -5625,12 +6162,17 @@ if (!class_exists('Pap_Api_Tracker', false)) {
       private $trackingResponse;
       private $visitorId;
       private $accountId;
+      private $ip;
+      private $userAgent;
+      private $paramNameUserId = 'a_aid';
+      private $overwriteCookie = false;
       /**
        * @var array<Pap_Tracking_Action_RequestActionObject>
        */
       private $sales = array();
       const VISITOR_COOKIE_NAME = 'PAPVisitorId';
-      
+      const AFFILIATE_COOKIE_NAME = 'PAPAffiliateId';
+  
       const NOT_LOADED_YET = '-1';
       /**
        * @var Gpf_Rpc_Data
@@ -5644,7 +6186,7 @@ if (!class_exists('Pap_Api_Tracker', false)) {
        * @var Gpf_Rpc_Data
        */
       private $channel = self::NOT_LOADED_YET;
-      
+  
       /**
        * This class requires correctly initialized merchant session
        *
@@ -5655,9 +6197,16 @@ if (!class_exists('Pap_Api_Tracker', false)) {
               throw new Exception("This class can be used only by merchant!");
           }
           $this->session = $session;
-          $this->visitorId = @$_COOKIE[self::VISITOR_COOKIE_NAME];
+          $this->visitorId = $this->getVisitorIdFromCookie();
       }
-      
+  
+      private function getVisitorIdFromCookie() {
+          if (!isset($_COOKIE[self::VISITOR_COOKIE_NAME])) {
+              return '';
+          }
+          return $_COOKIE[self::VISITOR_COOKIE_NAME];
+      }
+  
       public function setVisitorId($visitorId) {
           $this->visitorId = $visitorId;
       }
@@ -5669,23 +6218,51 @@ if (!class_exists('Pap_Api_Tracker', false)) {
       public function setAccountId($accountId) {
           $this->accountId = $accountId;
       }
-      
+  
+      public function setParamNameUserId($paramNameUserId) {
+          $this->paramNameUserId = $paramNameUserId;
+      }
+  
+      public function setOverwriteCookie($overwriteCookie = true) {
+          $this->overwriteCookie = $overwriteCookie;
+      }
+  
       public function track() {
+          if (count($this->sales) == 0) {
+              $this->trackClickRequest();
+              return;
+          }
+  
+          foreach ($this->sales as $sale) {
+              $request = $this->createTrackRequest();
+              $saleParams = Gpf_Rpc_Json::encodeStatic(array($sale));
+              $request->addQueryParam('sale', $saleParams);
+  
+              $request->setUrl($request->getUrl() . $request->getQuery());
+              if ($this->session->getDebug()) {
+                  echo 'Tracking request: '.$request->getUrl();
+                  echo "<br>\n";
+              }
+              $this->executeTrackRequest($request);
+          }
+      }
+  
+      /**
+       *
+       * @return Gpf_Net_Http_Request
+       */
+      private function createTrackRequest() {
           $request = new Gpf_Net_Http_Request();
           $request->setUrl(str_replace('server.php', 'track.php', $this->session->getUrl()));
-          $request->setMethod('POST');
-  
-  		$this->setQueryParams($request);
+          $request->setMethod('GET');
+          $this->setQueryParams($request);
           if ($this->session->getDebug()) {
               $request->addQueryParam('PDebug', 'Y');
           }
-          
-          $request->setUrl($request->getUrl() . $request->getQuery());
-          $request->setBody("sale=".$this->getSaleParams());
-          if ($this->session->getDebug()) {
-              echo 'Tracking request: '.$request->getUrl();
-              echo '&sale=' . urlencode($this->getSaleParams())."<br>\n";
-          }
+          return $request;
+      }
+  
+      private function executeTrackRequest(Gpf_Net_Http_Request $request) {
           $response = $this->sendRequest($request);
           $this->trackingResponse = trim($response->getBody());
           if ($this->session->getDebug()) {
@@ -5694,7 +6271,17 @@ if (!class_exists('Pap_Api_Tracker', false)) {
           $this->parseResponse();
           $this->affiliate = self::NOT_LOADED_YET;
       }
-      
+  
+      private function trackClickRequest() {
+          $request = $this->createTrackRequest();
+  
+          $request->setUrl($request->getUrl() . $request->getQuery());
+          if ($this->session->getDebug()) {
+              echo 'Tracking request: '.$request->getUrl();
+          }
+          $this->executeTrackRequest($request);
+      }
+  
       protected function setQueryParams(Gpf_Net_Http_Request $request) {
       	$request->addQueryParam('visitorId', $this->visitorId);
       	$request->addQueryParam('accountId', $this->accountId);
@@ -5706,15 +6293,29 @@ if (!class_exists('Pap_Api_Tracker', false)) {
           $request->addQueryParam('ip', $this->getIp());
           $request->addQueryParam('useragent', $this->getUserAgent());
       }
-      
+  
+      public function setIp($value) {
+          $this->ip = $value;
+      }
+  
       protected function getIp() {
-      	return @Gpf_Http::getRemoteIp();
+          if ($this->ip !== null) {
+              return $this->ip;
+          }
+          return Gpf_Http::getRemoteIp();
       }
-      
+  
+      public function setUserAgent($value) {
+          $this->userAgent = $value;
+      }
+  
       protected function getUserAgent() {
-      	return @$_SERVER['HTTP_USER_AGENT'];
+          if ($this->userAgent !== null) {
+              return $this->userAgent;
+          }
+      	return Gpf_Http::getUserAgent();
       }
-      
+  
       protected function sendRequest(Gpf_Net_Http_Request $request) {
           $client = new Gpf_Net_Http_Client();
           return $client->execute($request);
@@ -5726,13 +6327,23 @@ if (!class_exists('Pap_Api_Tracker', false)) {
           }
           $this->includeJavascript();
           $this->saveCookiesByJavascript();
+          $this->saveAffiliateCookie();
       }
   
       public function save3rdPartyCookiesOnly($cookieDomainValidity = null) {
       	if ($this->visitorId == null) {
               return;
           }
-          $this->save3rdPartyCookie(self::VISITOR_COOKIE_NAME, $this->visitorId, time() + 315569260, true, $cookieDomainValidity);
+          $this->save3rdPartyCookie(self::VISITOR_COOKIE_NAME, $this->visitorId, time() + 31536000, true, $cookieDomainValidity);
+          $this->saveAffiliateCookie($cookieDomainValidity);
+      }
+  
+      private function saveAffiliateCookie($cookieDomainValidity = null) {
+          if (isset($_GET[$this->paramNameUserId]) && $_GET[$this->paramNameUserId] != '') {
+              if ($this->overwriteCookie || !$this->existsAffiliateCookie()) {
+                  $this->save3rdPartyCookie(self::AFFILIATE_COOKIE_NAME, $_GET[$this->paramNameUserId], time() + 300, true, $cookieDomainValidity);
+              }
+          }
       }
   
       /**
@@ -5741,7 +6352,7 @@ if (!class_exists('Pap_Api_Tracker', false)) {
       public function getAffiliate() {
       	return $this->getData($this->affiliate, 'getAffiliate', 'userid');
       }
-      
+  
       /**
        * @return Gpf_Rpc_Data
        */
@@ -5764,6 +6375,14 @@ if (!class_exists('Pap_Api_Tracker', false)) {
               $request = new Gpf_Rpc_DataRequest('Pap_Tracking_Visit_SingleVisitorProcessor', $method, $this->session);
               $request->addParam('visitorId', $this->visitorId);
               $request->addParam('accountId', $this->accountId);
+              if (isset($_GET[$this->paramNameUserId]) && $_GET[$this->paramNameUserId] != '') {
+                  $request->addParam('userId', $_GET[$this->paramNameUserId]);
+              } else if ($this->existsAffiliateCookie()) {
+                  $request->addParam('userId', $_COOKIE[self::AFFILIATE_COOKIE_NAME]);
+              }
+              if ($this->session->getSessionId() == '') {
+                  $request->addParam('initSession', Gpf::YES);
+              }
               $request->sendNow();
               $data = $request->getData();
               if (is_null($data->getValue($primaryKeyName))) {
@@ -5772,7 +6391,11 @@ if (!class_exists('Pap_Api_Tracker', false)) {
           }
           return $data;
       }
-      
+  
+      private function existsAffiliateCookie() {
+          return isset($_COOKIE[self::AFFILIATE_COOKIE_NAME]) && !is_array($_COOKIE[self::AFFILIATE_COOKIE_NAME]) && $_COOKIE[self::AFFILIATE_COOKIE_NAME] != '';
+      }
+  
       /**
        * Creates and returns new sale
        *
@@ -5802,7 +6425,7 @@ if (!class_exists('Pap_Api_Tracker', false)) {
           $json = new Gpf_Rpc_Json();
           return $json->encode($this->sales);
       }
-      
+  
       /**
        * Parses track.php response. Response can be empty or setVisitor('4c5e2151b8856e55dbfeb247c22300Hg');
        */
@@ -5810,7 +6433,7 @@ if (!class_exists('Pap_Api_Tracker', false)) {
           if ($this->trackingResponse == '') {
               return;
           }
-          if (!preg_match('/^setVisitor\(\'([a-zA-Z0-9]+)\'\);/', $this->trackingResponse, $matches)) {
+          if (!preg_match('/setVisitor\(\'([a-zA-Z0-9]+)\'\);/', $this->trackingResponse, $matches)) {
               return;
           }
           if ($matches[1] != '') {
@@ -5843,7 +6466,7 @@ if (!class_exists('Pap_Api_Tracker', false)) {
               $portString = ':' . $_SERVER["SERVER_PORT"];
           }
           $protocol = 'http';
-          if(isset($_SERVER['HTTPS']) && strlen($_SERVER['HTTPS']) > 0 && strtolower($_SERVER['HTTPS']) != 'off') {
+          if(Gpf_Http::isSSL()) {
               $protocol = 'https';
           }
           return $protocol . '://' . $this->getServerName() . $portString . $scriptName;
@@ -6028,14 +6651,14 @@ if (!class_exists('Pap_Api_ClickTracker', false)) {
 
 if (!class_exists('Pap_Api_RecurringCommission', false)) {
   class Pap_Api_RecurringCommission extends Pap_Api_Object {
-  	
+  
       public function __construct(Gpf_Api_Session $session) {
           parent::__construct($session);
           $this->class = 'Pap_Features_RecurringCommissions_RecurringCommissionsForm';
       }
       
-      public function setOrderId($value) { 
-      	$this->setField('orderid', $value);    
+      public function setOrderId($value, $operator = self::OPERATOR_EQUALS) { 
+      	$this->setField('orderid', $value, $operator);    
       }
   
       public function setTotalCost($value) { 
@@ -6052,19 +6675,35 @@ if (!class_exists('Pap_Api_RecurringCommission', false)) {
   
       protected function getGridRequest() {
   		return new Pap_Api_RecurringCommissionsGrid($this->getSession());
-      }  
-      
+      }
+  
       public function createCommissions() {
           $request = new Gpf_Rpc_ActionRequest('Pap_Features_RecurringCommissions_RecurringCommissionsForm',
                                                'createCommissions', $this->getSession());
           $request->addParam('id', $this->getId());
           $request->addParam('orderid', $this->getField('orderid'));
           $request->addParam('totalcost', $this->getField('totalcost'));
+          if ($this->getSession()->getSessionId() == '') {
+              $request->addParam('initSession', Gpf::YES);
+          }
           $request->sendNow();
           $action = $request->getAction();
           if ($action->isError()) {
               throw new Gpf_Exception($action->getErrorMessage());
           }
+      }
+  
+      public function createCommissionsReturnIds() {
+          $request = new Gpf_Rpc_DataRequest('Pap_Features_RecurringCommissions_RecurringCommissionsForm',
+                                              'createCommissionsReturnIds', $this->getSession());
+          $request->addParam('id', $this->getId());
+          $request->addParam('orderid', $this->getField('orderid'));
+          $request->addParam('totalcost', $this->getField('totalcost'));
+          if ($this->getSession()->getSessionId() == '') {
+              $request->addParam('initSession', Gpf::YES);
+          }
+          $request->sendNow();
+          return $request->getData()->getValue(Gpf_Rpc_Action::IDS);
       }
   }
 
@@ -6115,12 +6754,12 @@ if (!class_exists('Pap_Api_PayoutsGrid', false)) {
       }
   
       protected function sendPayTransactionsCall($paymentNote, $affiliateNote, $send_payment_to_affiliate, $send_generated_invoices_to_merchant, $send_generated_invoices_to_affiliates) {
-          $request = new Gpf_Rpc_FormRequest('Pap_Merchants_Payout_PayAffiliatesForm', 'payAffiliates', $this->apiSessionObject);
-          $request->setField('paymentNote', $paymentNote);
-          $request->setField('affiliateNote', $affiliateNote);
-          $request->setField('send_payment_to_affiliate', $send_payment_to_affiliate);
-          $request->setField('send_generated_invoices_to_merchant', $send_generated_invoices_to_merchant);
-          $request->setField('send_generated_invoices_to_affiliates', $send_generated_invoices_to_affiliates);
+          $request = new Gpf_Rpc_ActionRequest('Pap_Merchants_Payout_PayAffiliatesForm', 'payAffiliates', $this->apiSessionObject);
+          $request->addParam('paymentNote', $paymentNote);
+          $request->addParam('affiliateNote', $affiliateNote);
+          $request->addParam('send_payment_to_affiliate', $send_payment_to_affiliate);
+          $request->addParam('send_generated_invoices_to_merchant', $send_generated_invoices_to_merchant);
+          $request->addParam('send_generated_invoices_to_affiliates', $send_generated_invoices_to_affiliates);
           $request->addParam('ids', new Gpf_Rpc_Array($this->getAffiliatesToPay()));
           $request->addParam('filters', new Gpf_Rpc_Array($this->getFilters()));
           $request->sendNow();
@@ -6204,6 +6843,19 @@ if (!class_exists('Pap_Api_PayoutsHistoryGrid', false)) {
 
 } //end Pap_Api_PayoutsHistoryGrid
 
+if (!class_exists('Pap_Api_Session', false)) {
+  class Pap_Api_Session extends Gpf_Api_Session {
+  
+      const AUTHENTICATE_CLASS_NAME = 'Pap_Api_AuthService';
+  
+      
+      protected function getAuthenticateClassName() {
+          return self::AUTHENTICATE_CLASS_NAME;
+      }
+  }
+
+} //end Pap_Api_Session
+
 if (!class_exists('Gpf_Net_Http_Client', false)) {
     class Gpf_Net_Http_Client extends Gpf_Net_Http_ClientBase {
 
@@ -6212,11 +6864,28 @@ if (!class_exists('Gpf_Net_Http_Client', false)) {
         }
 
         protected function setProxyServer(Gpf_Net_Http_Request $request) {
+            if (defined('PAP_API_PROXY_SERVER')) {
+                $proxyServer = PAP_API_PROXY_SERVER;
+
+                if (defined('PAP_API_PROXY_PORT')) {
+                    $proxyPort = PAP_API_PROXY_PORT;
+                } else {
+                    $proxyPort = '';
+                }
+                if (defined('PAP_API_PROXY_USER')) {
+                    $proxyUser = PAP_API_PROXY_USER;
+                } else {
+                    $proxyUser = '';
+                }
+                if (defined('PAP_API_PROXY_PASSWORD')) {
+                    $proxyPassword = PAP_API_PROXY_PASSWORD;
+                } else {
+                    $proxyPassword = '';
+                }
+                $request->setProxyServer($proxyServer, $proxyPort, $proxyUser, $proxyPassword);
+            }
         }
     }
 }
-/*
-VERSION
-c5b5325b17f6b24a9b9d6aacffd2a608
-*/
+
 ?>

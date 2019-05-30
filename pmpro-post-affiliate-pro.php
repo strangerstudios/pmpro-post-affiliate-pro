@@ -3,7 +3,7 @@
 Plugin Name: Paid Memberships Pro - Post Affiliate Pro Integration Add On
 Plugin URI: http://www.paidmembershipspro.com/wp/pmpro-post-affiliate-pro/
 Description: Process an affiliate via Post Affiliate Pro after a PMPro checkout.
-Version: .2.1.1
+Version: .2.2
 Author: Stranger Studios
 Author URI: http://www.strangerstudios.com
 		 
@@ -24,7 +24,7 @@ function pap_login()
 		if(current_user_can("manage_options"))
 		{
 		?>
-			<p>ERROR: Can't authenticate with Post Affiliates Pro. Check that your PAP credentials are correct in the PMPro Post Affiliates Pro plugin and that the Post Affiliates Pro API is not experiencing an outage. Response from PAP: <?php echo $session->getMessage();?></p>
+			<p>ERROR: Can't authenticate with Post Affiliate Pro. Check that your PAP credentials are correct in the PMPro Post Affiliate Pro plugin and that the Post Affiliate Pro API is not experiencing an outage. Response from PAP: <?php echo $session->getMessage();?></p>
 		<?php
 		}
 		else

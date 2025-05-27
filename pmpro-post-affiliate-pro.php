@@ -1,15 +1,16 @@
 <?php
-/*
-Plugin Name: Paid Memberships Pro - Post Affiliate Pro Integration Add On
-Plugin URI: http://www.paidmembershipspro.com/wp/pmpro-post-affiliate-pro/
-Description: Process an affiliate via Post Affiliate Pro after a PMPro checkout.
-Version: .2.1.1
-Author: Stranger Studios
-Author URI: http://www.strangerstudios.com
-		 
-Paid Memberships Pro (http://wordpress.org/extend/plugins/paid-memberships-pro/) must be installed and activated. You will need a Post Affiliate Pro account.
+/**
+ * Plugin Name: Paid Memberships Pro - Post Affiliate Pro Integration Add On
+ * Plugin URI: https://www.paidmembershipspro.com/add-ons/pmpro-post-affiliate-pro-integration/
+ * Description: Process an affiliate via Post Affiliate Pro after a PMPro checkout.
+ * Version: 0.3
+ * Author: Stranger Studios
+ * Author URI: https://www.strangerstudios.com
+ *		 
+ * Paid Memberships Pro (https://www.paidmembershipspro.com) must be installed and activated. 
+ * You will need a Post Affiliate Pro account.
 */
-define('URL_TO_PAP', 'http://{account}.postaffiliatepro.com/');
+define('URL_TO_PAP', 'https://{account}.postaffiliatepro.com/');
 define('PAP_LOGIN', '{email}');
 define('PAP_PASS', '{pass}');
 define('PAP_ACCOUNT', 'default1');
@@ -233,12 +234,11 @@ add_action("wp_head", "pap_pmpro_wp_head");
 /*
 Function to add links to the plugin row meta
 */
-function pap_pmpro_plugin_row_meta($links, $file) {
-	if(strpos($file, 'pmpro-post-affiliate-pro.php') !== false)
-	{
+function pap_pmpro_plugin_row_meta( $links, $file ) {
+	if ( strpos( $file, 'pmpro-post-affiliate-pro.php' ) !== false ) {
 		$new_links = array(
-			'<a href="' . esc_url('http://www.paidmembershipspro.com/add-ons/third-party-integration/pmpro-post-affiliate-pro-integration/')  . '" title="' . esc_attr( __( 'View Documentation', 'pmpro' ) ) . '">' . __( 'Docs', 'pmpro' ) . '</a>',
-			'<a href="' . esc_url('http://paidmembershipspro.com/support/') . '" title="' . esc_attr( __( 'Visit Customer Support Forum', 'pmpro' ) ) . '">' . __( 'Support', 'pmpro' ) . '</a>',
+			'<a href="' . esc_url('https://www.paidmembershipspro.com/add-ons/pmpro-post-affiliate-pro-integration/')  . '" title="' . esc_attr__( 'View Documentation', 'pmpro-post-affiliate-pro' ) . '">' . esc_html__( 'Docs', 'pmpro-post-affiliate-pro' ) . '</a>',
+			'<a href="' . esc_url('https://paidmembershipspro.com/support/') . '" title="' . esc_attr__( 'Visit Customer Support Forum', 'pmpro-post-affiliate-pro' ) . '">' . esc_html__( 'Support', 'pmpro-post-affiliate-pro' ) . '</a>',
 		);
 		$links = array_merge($links, $new_links);
 	}

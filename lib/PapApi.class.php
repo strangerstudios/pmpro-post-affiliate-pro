@@ -1987,8 +1987,9 @@ if (!class_exists('Gpf_Net_Http_ClientBase', false)) {
           	@curl_setopt($session, CURLOPT_USERPWD, $request->getHttpUser() . ":" . $request->getHttpPassword());
           	@curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
           }
-          @curl_setopt ($session, CURLOPT_SSL_VERIFYHOST, 0);
-          @curl_setopt ($session, CURLOPT_SSL_VERIFYPEER, 0);
+          @curl_setopt ($session, CURLOPT_SSL_VERIFYHOST, 2);
+          @curl_setopt ($session, CURLOPT_SSL_VERIFYPEER, true);
+          @curl_setopt ($session, CURLOPT_CAINFO, ABSPATH . WPINC . '/certificates/ca-bundle.crt');
           if ($request->getMaxTimeout() != '') {
               @curl_setopt($ch, CURLOPT_TIMEOUT, $request->getMaxTimeout()); 
           }

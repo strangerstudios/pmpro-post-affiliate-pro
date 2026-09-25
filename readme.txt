@@ -15,7 +15,7 @@ This plugin will integrate with the Post Affiliate Pro platform.
 
 1. Upload the `pmpro-post-affiliate-pro` directory to the `/wp-content/plugins/` directory of your site.
 1. Activate the plugin through the 'Plugins' menu in WordPress.
-1. Edit pmpro-post-affiliate-pro.php to enter your affiliate login link, username, and password.
+1. Add your Post Affiliate Pro URL, login email, and password to your site's wp-config.php file as the URL_TO_PAP, PAP_LOGIN, and PAP_PASS constants. See the comment at the top of pmpro-post-affiliate-pro.php for an example. Do not edit the plugin file itself, since your settings will be erased when the plugin updates.
 . Create links in Post Affiliate Pro as you would normally. The plugin will track clicks and sales through the PAP API.
 
 == Frequently Asked Questions ==

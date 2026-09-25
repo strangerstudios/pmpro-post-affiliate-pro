@@ -3,7 +3,7 @@
  * Plugin Name: Paid Memberships Pro - Post Affiliate Pro Integration Add On
  * Plugin URI: https://www.paidmembershipspro.com/add-ons/pmpro-post-affiliate-pro-integration/
  * Description: Process an affiliate via Post Affiliate Pro after a PMPro checkout.
- * Version: 0.3
+ * Version: 0.4
  * Author: Stranger Studios
  * Author URI: https://www.strangerstudios.com
  *		 

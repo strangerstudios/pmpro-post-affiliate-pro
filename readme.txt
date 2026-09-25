@@ -1,9 +1,9 @@
 === Paid Memberships Pro - Post Affiliate Pro Integration Add On ===
 Contributors: strangerstudios
 Tags: pmpro, paid memberships pro, ecommerce, affiliates
-Requires at least: 5.0
-Tested up to: 6.8
-Stable tag: 0.3
+Requires at least: 5.3
+Tested up to: 7.1
+Stable tag: 0.4
 
 Integrate Paid Memberships Pro with the Post Affiliate Pro platform.
 
@@ -29,6 +29,10 @@ Please post it in the issues section of GitHub and we'll fix it as soon as we ca
 Please visit our premium support site at http://www.paidmembershipspro.com for more documentation and our support forums.
 
 == Changelog ==
+= 0.4 - 2026-09-25 =
+* SECURITY: Post Affiliate Pro API requests now verify the server's SSL certificate. #13 (@dparker1005)
+* ENHANCEMENT: Post Affiliate Pro settings can now be defined in `wp-config.php` so they are no longer erased when the plugin updates. If you previously edited `pmpro-post-affiliate-pro.php`, add your `URL_TO_PAP`, `PAP_LOGIN`, and `PAP_PASS` constants (and `PAP_ACCOUNT`, if you changed it from `default1`) to `wp-config.php` after updating. #14 (@dparker1005)
+
 = 0.3 - 2025-05-27 =
 * BUG FIX: Fixed a fatal error where curly braces are no longer supported in PHP 8 and above. (@andrewlimaza)
 

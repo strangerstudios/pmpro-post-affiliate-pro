@@ -64,7 +64,7 @@ function pap_login()
 }
 
 //function to save a sale with PAP
-function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaign_id = NULL, $channel_id = NULL, $visitor_id = NULL)
+function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaign_id = NULL, $channel_id = NULL, $visitor_id = NULL, $level_id = NULL)
 {
 	pap_login();
 	$saleTracker = new Pap_Api_SaleTracker(URL_TO_PAP . 'scripts/sale.php');
@@ -77,11 +77,15 @@ function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaig
     $sale1->setTotalCost($total);
     $sale1->setOrderID($orderid);
 
-    $order = new MemberOrder($orderid);
-    $level_id = $order->membership_id;
+    //orders tracked from pmpro_add_order aren't saved yet, so callers should pass the level ID instead of having us look the order up by code
+    if(empty($level_id))
+    {
+        $order = new MemberOrder($orderid);
+        $level_id = $order->membership_id;
+    }
     $level = pmpro_getLevel($level_id);
 
-    $sale1->setProductID(sanitize_title($level->name, "pmpro-level-" . $level_id));
+    $sale1->setProductID(sanitize_title(empty($level) ? "" : $level->name, "pmpro-level-" . $level_id));
 	
 	if(!empty($affiliate_code))
 		$sale1->setAffiliateID($affiliate_code);
@@ -165,7 +169,7 @@ function pap_pmpro_after_checkout($user_id, $morder = NULL)
 	$parts = array_pad(explode(",", (string)$affiliate['affiliate_subid']), 3, "");
 
 	//api
-	pap_pmpro_track_sale($morder->total, $morder->code, $affiliate['affiliate_id'], $parts[0], $parts[1], $parts[2]);
+	pap_pmpro_track_sale($morder->total, $morder->code, $affiliate['affiliate_id'], $parts[0], $parts[1], $parts[2], $morder->membership_id);
 	update_pmpro_membership_order_meta($morder->id, 'pap_pmpro_sale_tracked', 1);
 
 	//save affiliate id in order
@@ -211,7 +215,7 @@ function pap_pmpro_add_order($morder)
 				$parts = array_pad(explode(",", (string)$affiliate['affiliate_subid']), 3, "");
 
 				//api
-				pap_pmpro_track_sale($morder->total, $morder->code, $affiliate['affiliate_id'], $parts[0], $parts[1], $parts[2]);
+				pap_pmpro_track_sale($morder->total, $morder->code, $affiliate['affiliate_id'], $parts[0], $parts[1], $parts[2], $morder->membership_id);
 				$pap_pmpro_sale_tracked = true;
 			}
 

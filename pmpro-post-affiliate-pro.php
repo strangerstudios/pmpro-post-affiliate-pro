@@ -252,7 +252,7 @@ function pap_pmpro_wp_head()
 				today.setTime( today.getTime() );
 				var expires = <?php echo intval($cookielength); ?> * 1000 * 60 * 60 * 24;
 				var expires_date = new Date( today.getTime() + (expires) );
-				document.cookie = 'pap_pmpro_affiliate=<?php echo $pap_pmpro_affiliate; ?>;path=/;expires=' + expires_date.toGMTString() + ';';		    
+				document.cookie = 'pap_pmpro_affiliate=' + <?php echo wp_json_encode( $pap_pmpro_affiliate ); ?> + ';path=/;expires=' + expires_date.toGMTString() + ';';		    
 			</script>
 		<?php
 	}

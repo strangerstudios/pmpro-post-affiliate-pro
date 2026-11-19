@@ -190,7 +190,8 @@ add_action("pmpro_orders_show_affiliate_ids", "__return_true");
 //check for affiliate code
 function pap_pmpro_wp_head()
 {
-	pap_login();
+	// Load the PAP API library. Click tracking doesn't need an authenticated merchant session.
+	require_once( dirname( __FILE__ ) . '/lib/PapApi.class.php' );
 	
     // init session for PAP
     $session = new Gpf_Api_Session(URL_TO_PAP . "scripts/server.php");

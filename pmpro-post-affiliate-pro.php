@@ -64,7 +64,7 @@ function pap_login()
 }
 
 //function to save a sale with PAP
-function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaign_id = NULL, $channel_id = NULL, $visitor_id = NULL)
+function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaign_id = NULL, $channel_id = NULL, $visitor_id = NULL, $level_id = NULL)
 {
 	pap_login();
 	$saleTracker = new Pap_Api_SaleTracker(URL_TO_PAP . 'scripts/sale.php');
@@ -77,11 +77,15 @@ function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaig
     $sale1->setTotalCost($total);
     $sale1->setOrderID($orderid);
 
-    $order = new MemberOrder($orderid);
-    $level_id = $order->membership_id;
+    //orders tracked from pmpro_add_order aren't saved yet, so callers should pass the level ID instead of having us look the order up by code
+    if(empty($level_id))
+    {
+        $order = new MemberOrder($orderid);
+        $level_id = $order->membership_id;
+    }
     $level = pmpro_getLevel($level_id);
 
-    $sale1->setProductID(sanitize_title($level->name, "pmpro-level-" . $level_id));
+    $sale1->setProductID(sanitize_title(empty($level) ? "" : $level->name, "pmpro-level-" . $level_id));
 	
 	if(!empty($affiliate_code))
 		$sale1->setAffiliateID($affiliate_code);
@@ -110,62 +114,115 @@ function pap_pmpro_track_sale($total, $orderid, $affiliate_code = NULL, $campaig
 	}	
 }
 
-//track sales after checkout
-function pap_pmpro_after_checkout($user_id)
-{	
-	$morder = new MemberOrder();	
-	$morder->getLastMemberOrder($user_id);
-	
+//get the affiliate info from the visitor's affiliate cookie
+function pap_pmpro_get_cookie_affiliate()
+{
 	if(empty($_COOKIE['pap_pmpro_affiliate']))
-		return;
-	
-	$parts = explode(",", $_COOKIE['pap_pmpro_affiliate']);
-	$affiliate_code = $parts[0];
-	$campaign_id = $parts[1];
-	$channel_id = $parts[2];
+		return false;
+
+	$parts = array_pad(explode(",", $_COOKIE['pap_pmpro_affiliate']), 4, "");
+	if(empty($parts[0]))
+		return false;
+
 	$visitor_id = $parts[3];
-	
 	if(empty($visitor_id) && !empty($_COOKIE['PAPVisitorId']))
 		$visitor_id = $_COOKIE['PAPVisitorId'];
-		
-	if(!empty($morder->total))
+
+	return array(
+		'affiliate_id' => $parts[0],
+		'affiliate_subid' => $parts[1] . "," . $parts[2] . "," . $visitor_id,
+	);
+}
+
+//track sales after checkout
+function pap_pmpro_after_checkout($user_id, $morder = NULL)
+{
+	//get a fresh copy of the order that was checked out
+	if(!empty($morder->id))
 	{
-		//api
-		pap_pmpro_track_sale($morder->total, $morder->code, $affiliate_code, $campaign_id, $channel_id, $visitor_id);
-		
-		//save affiliate id in order
-		$morder->affiliate_id = $affiliate_code;
-		$morder->affiliate_subid = $campaign_id . "," . $channel_id . "," . $visitor_id;
-		$morder->saveOrder();		
+		$morder = new MemberOrder($morder->id);
+	}
+	else
+	{
+		$morder = new MemberOrder();
+		$morder->getLastMemberOrder($user_id);
+	}
+
+	if(empty($morder->id) || empty($morder->total))
+		return;
+
+	//only track one sale per order
+	if(get_pmpro_membership_order_meta($morder->id, 'pap_pmpro_sale_tracked', true))
+		return;
+
+	/*
+		Use the affiliate cookie if we have one. Otherwise, use the affiliate saved
+		to the order when it was added. (e.g. the checkout was completed by a gateway
+		webhook, or a returning member checked out without a cookie)
+	*/
+	$affiliate = pap_pmpro_get_cookie_affiliate();
+	if(empty($affiliate) && !empty($morder->affiliate_id))
+		$affiliate = array('affiliate_id' => $morder->affiliate_id, 'affiliate_subid' => $morder->affiliate_subid);
+	if(empty($affiliate))
+		return;
+
+	$parts = array_pad(explode(",", (string)$affiliate['affiliate_subid']), 3, "");
+
+	//api
+	pap_pmpro_track_sale($morder->total, $morder->code, $affiliate['affiliate_id'], $parts[0], $parts[1], $parts[2], $morder->membership_id);
+	update_pmpro_membership_order_meta($morder->id, 'pap_pmpro_sale_tracked', 1);
+
+	//save affiliate id in order
+	if($morder->affiliate_id != $affiliate['affiliate_id'] || $morder->affiliate_subid != $affiliate['affiliate_subid'])
+	{
+		$morder->affiliate_id = $affiliate['affiliate_id'];
+		$morder->affiliate_subid = $affiliate['affiliate_subid'];
+		$morder->saveOrder();
 	}
 }
-add_action("pmpro_after_checkout", "pap_pmpro_after_checkout");
+add_action("pmpro_after_checkout", "pap_pmpro_after_checkout", 10, 2);
 
 //track sales when orders are added
 function pap_pmpro_add_order($morder)
-{	
+{
+	global $pap_pmpro_affiliate_id, $pap_pmpro_affiliate_subid, $pap_pmpro_sale_tracked;
+	$pap_pmpro_affiliate_id = NULL;
+	$pap_pmpro_affiliate_subid = NULL;
+	$pap_pmpro_sale_tracked = false;
+
 	if(!empty($morder->total))
-	{			
-		//need to get the last order before this
-		$last_order = new MemberOrder();
-		$last_order->getLastMemberOrder($morder->user_id);
-				
-		if(!empty($last_order->affiliate_id))
-		{							
-			$parts = explode(",", $last_order->affiliate_subid);
-			$affiliate_code = $last_order->affiliate_id;
-			$campaign_id = $parts[0];
-			$channel_id = $parts[1];
-			$visitor_id = $parts[2];
-			
-			//api
-			pap_pmpro_track_sale($morder->total, $morder->code, $affiliate_code, $campaign_id, $channel_id, $visitor_id);
-					
+	{
+		//orders added at checkout are tracked in pap_pmpro_after_checkout once the checkout is complete
+		$is_checkout = pmpro_is_checkout();
+
+		//at checkout, the affiliate cookie takes priority
+		$affiliate = $is_checkout ? pap_pmpro_get_cookie_affiliate() : false;
+
+		if(empty($affiliate))
+		{
+			//need to get the last order before this
+			$last_order = new MemberOrder();
+			$last_order->getLastMemberOrder($morder->user_id);
+
+			if(!empty($last_order->affiliate_id))
+				$affiliate = array('affiliate_id' => $last_order->affiliate_id, 'affiliate_subid' => $last_order->affiliate_subid);
+		}
+
+		if(!empty($affiliate))
+		{
+			if(!$is_checkout)
+			{
+				$parts = array_pad(explode(",", (string)$affiliate['affiliate_subid']), 3, "");
+
+				//api
+				pap_pmpro_track_sale($morder->total, $morder->code, $affiliate['affiliate_id'], $parts[0], $parts[1], $parts[2], $morder->membership_id);
+				$pap_pmpro_sale_tracked = true;
+			}
+
 			//update the affiliate id for this order
-			global $pap_pmpro_affiliate_id, $pap_pmpro_affiliate_subid;
-			$pap_pmpro_affiliate_id = $affiliate_code;
-			$pap_pmpro_affiliate_subid = $campaign_id . "," . $channel_id . "," . $visitor_id;
-		}		
+			$pap_pmpro_affiliate_id = $affiliate['affiliate_id'];
+			$pap_pmpro_affiliate_subid = $affiliate['affiliate_subid'];
+		}
 	}
 }
 add_action("pmpro_add_order", "pap_pmpro_add_order");
@@ -173,13 +230,19 @@ add_action("pmpro_add_order", "pap_pmpro_add_order");
 //save affiliate ids into orders
 function pap_pmpro_added_order($morder)
 {
-	global $pap_pmpro_affiliate_id, $pap_pmpro_affiliate_subid;
-		
+	global $pap_pmpro_affiliate_id, $pap_pmpro_affiliate_subid, $pap_pmpro_sale_tracked;
+
+	//remember that we already tracked a sale for this order
+	if(!empty($pap_pmpro_sale_tracked))
+		update_pmpro_membership_order_meta($morder->id, 'pap_pmpro_sale_tracked', 1);
+
 	if(!empty($pap_pmpro_affiliate_id))
 	{
-		$morder->affiliate_id = $pap_pmpro_affiliate_id;
-		$morder->affiliate_subid = $pap_pmpro_affiliate_subid;
-		$morder->saveOrder();				
+		//use a fresh copy of the order. PMPro casts the affiliate_id of a brand new order object to an integer, which breaks affiliate IDs with letters in them
+		$order = new MemberOrder($morder->id);
+		$order->affiliate_id = $pap_pmpro_affiliate_id;
+		$order->affiliate_subid = $pap_pmpro_affiliate_subid;
+		$order->saveOrder();
 	}
 }
 add_action("pmpro_added_order", "pap_pmpro_added_order");
